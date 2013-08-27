@@ -239,6 +239,7 @@ public class FiCaSchedulerApp extends SchedulerApplication {
     // Required sanity check - AM can call 'allocate' to update resource 
     // request without locking the scheduler, hence we need to check
     if (getTotalRequiredResources(priority) <= 0) {
+    	  LOG.fatal("$$ required too many resources");
       return null;
     }
     

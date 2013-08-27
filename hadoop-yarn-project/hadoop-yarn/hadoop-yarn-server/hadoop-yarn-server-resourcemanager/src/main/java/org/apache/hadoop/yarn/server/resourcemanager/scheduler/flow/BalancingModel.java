@@ -38,7 +38,7 @@ public class BalancingModel implements AssignmentModel {
 
 		Map<FlowNetworkNode, Integer> slotMap = new HashMap<FlowNetworkNode, Integer>();
 		for (FlowNetworkNode node : nodes) {
-			slotMap.put(node, node.slot);
+			slotMap.put(node, node.getAvailableSlots());
 		}
 
 		Set<FlowNetworkTask> orderedTasks = new TreeSet<FlowNetworkTask>(new Comparator<FlowNetworkTask>() {

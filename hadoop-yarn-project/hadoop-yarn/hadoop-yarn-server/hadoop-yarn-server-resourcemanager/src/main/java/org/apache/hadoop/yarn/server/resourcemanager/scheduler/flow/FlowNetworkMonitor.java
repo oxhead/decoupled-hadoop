@@ -9,17 +9,22 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.yarn.api.records.ApplicationMaster;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMApp;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
+import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNode;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowNetworkMonitor.FlowNetworkTask;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowSchedulerConfiguration.Job;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.Task.Type;
 
 /**
@@ -53,7 +58,7 @@ public class FlowNetworkMonitor {
 	public void addNode(FiCaSchedulerNode node) {
 		LOG.fatal("[Network] add node: " + node.getHostName());
 		double capacity = conf.getNodeCapacity(node.getHostName());
-		FlowNetworkNode flowNode = new FlowNetworkNode(node, capacity, 0);
+		FlowNetworkNode flowNode = new FlowNetworkNode(node, capacity);
 		nodeMap.put(node, flowNode);
 	}
 
@@ -70,7 +75,23 @@ public class FlowNetworkMonitor {
 
 	public void addApp(FiCaSchedulerApp app) {
 		LOG.fatal("[Network] add app: " + app.getApplicationAttemptId());
-		FlowNetworkApp flowApp = new FlowNetworkApp(app);
+
+		String appName = rmContext.getRMApps().get(app.getApplicationId()).getName();
+		Job job;
+		if (appName.contains("TeraSort")) {
+			job = FlowSchedulerConfiguration.Job.TERASORT;
+		} else if (appName.contains("word count")) {
+			job = FlowSchedulerConfiguration.Job.WORDCOUNT;
+		} else if (appName.contains("grep-search")) {
+			job = FlowSchedulerConfiguration.Job.GREP;
+		} else {
+			job = FlowSchedulerConfiguration.Job.DEFAULT;
+		}
+
+		FlowRate mapFlowRate = conf.getFlowRate(job, Type.Map);
+		FlowRate reduceFlowRate = conf.getFlowRate(job, Type.Reduce);
+		FlowNetworkApp flowApp = new FlowNetworkApp(app, mapFlowRate, reduceFlowRate);
+
 		appMap.put(app, flowApp);
 		apps.add(app);
 	}
@@ -85,6 +106,11 @@ public class FlowNetworkMonitor {
 		return nodeMap.get(node);
 	}
 
+	public FlowNetworkStorage randomStorage() {
+		List<FlowNetworkStorage> storageNodes = new ArrayList<FlowNetworkMonitor.FlowNetworkStorage>(storageMap.values());
+		return storageNodes.get(new Random().nextInt(storageNodes.size()));
+	}
+
 	public FlowNetworkStorage lookupStorage(String host) {
 		if (!storageMap.containsKey(host)) {
 			FlowNetworkStorage storage = new FlowNetworkStorage(host);
@@ -97,17 +123,6 @@ public class FlowNetworkMonitor {
 
 	public FlowNetworkApp lookupApp(FiCaSchedulerApp app) {
 		return appMap.get(app);
-	}
-
-	public FlowNetworkTask lookupTask(RMContainer container) {
-		FlowNetworkTask task = null;
-		for (FlowNetworkApp app : appMap.values()) {
-			task = app.lookupTask(container);
-			if (task != null) {
-				return task;
-			}
-		}
-		return task;
 	}
 
 	public void update(int time) {
@@ -129,6 +144,9 @@ public class FlowNetworkMonitor {
 
 	public void printNodeStatus() {
 		for (FlowNetworkNode node : nodeMap.values()) {
+			LOG.fatal(node.getNodeResourceStatus());
+		}
+		for (FlowNetworkNode node : nodeMap.values()) {
 			LOG.fatal(node.getNodeStatus());
 		}
 	}
@@ -143,38 +161,19 @@ public class FlowNetworkMonitor {
 		return new LinkedList<FlowNetworkMonitor.FlowNetworkStorage>(storageMap.values());
 	}
 
-	public List<FlowNetworkTask> getTasks() {
-		List<FlowNetworkTask> unscheduleTasks = new ArrayList<FlowNetworkTask>();
-
-		for (FiCaSchedulerApp app : apps) {
-			FlowNetworkApp flowNetworkApp = lookupApp(app);
-			unscheduleTasks.addAll(flowNetworkApp.getTasks());
-		}
-		return unscheduleTasks;
-	}
-
-	public List<FlowNetworkTask> getUnscheduleTasks() {
-		List<FlowNetworkTask> unscheduleTasks = new ArrayList<FlowNetworkTask>();
-
-		for (FiCaSchedulerApp app : apps) {
-			FlowNetworkApp flowNetworkApp = lookupApp(app);
-			unscheduleTasks.addAll(flowNetworkApp.getUnscheduleTasks());
-		}
-		return unscheduleTasks;
-	}
-
-	public void launchTask(FiCaSchedulerNode node, RMContainer container, FiCaSchedulerApp app) {
+	public void launchTask(FiCaSchedulerNode node, FiCaSchedulerApp app, RMContainer container) {
 		LOG.fatal("[Update] launch container " + container.getContainer().getNodeHttpAddress() + " on " + node.getHostName() + " for app " + app.getApplicationAttemptId());
 		FlowNetworkNode flowNode = lookupNode(node);
 		FlowNetworkApp flowApp = lookupApp(app);
 		FlowNetworkTask task = flowApp.launchTask(container);
-		flowNode.launchTask(task);
 		task.node = flowNode;
-		if (task.type.equals(Type.Map)) {
-			if (task.storage != null) {
-				task.storage.launchTask(task);
-			}
-		}
+		flowNode.launchTask(task);
+		// no use now
+		// if (task.type.equals(Type.Map)) {
+		// if (task.storage != null) {
+		// task.storage.launchTask(task);
+		// }
+		// }
 	}
 
 	public void completeTask(FiCaSchedulerNode node, RMContainer container, FiCaSchedulerApp app) {
@@ -208,7 +207,7 @@ public class FlowNetworkMonitor {
 	private FlowRate getTaskFlowRate(FlowNetworkApp app, Type type) {
 		FlowRate flowRate;
 		if (type.equals(Type.AppMaster)) {
-			flowRate = new FlowRate(1, 1);
+			flowRate = new FlowRate(0, 0);
 		} else {
 			String appName = rmContext.getRMApps().get(app.app.getApplicationId()).getName();
 			if (appName.contains("TeraSort")) {
@@ -226,52 +225,39 @@ public class FlowNetworkMonitor {
 
 	private int getTaskSlot(ResourceRequest request) {
 		// TODO: should be configurable
-		return request.getCapability().getMemory() / 512;
+		// TODO: make sure this change could cause a bug?
+		return (int) (Math.ceil(request.getCapability().getMemory()) / 512);
 	}
 
 	// --------------------------------
 
 	class FlowNetworkNode {
+
 		// TODO: smart approach here
-		final static int MIN_SLOT_MEMORY = 512;
+		private final static int MIN_SLOT_MEMORY = 512;
 		double capacity;
-		double load;
-		int slot;
 		FiCaSchedulerNode node;
-		// Map<String, Integer> taskMap = new HashMap<String, Integer>();
 		List<FlowNetworkTask> launchedTasks = new LinkedList<FlowNetworkTask>();
 
-		public FlowNetworkNode(FiCaSchedulerNode node, double capacity, int load) {
+		private double effective_load = 0;
+		private double slot_capability = 0;
+
+		public FlowNetworkNode(FiCaSchedulerNode node, double capacity) {
 			this.node = node;
 			this.capacity = capacity;
-			this.load = load;
-			updateSlot();
 		}
 
 		public void update() {
-			updateSlot();
-			// updateLoad();
+			this.effective_load = calculateEffectiveLoad();
+			this.slot_capability = calculateSlotCapacity();
 		}
 
-		public void updateSlot() {
-			// TODO: handle by FlowNetworkNode? not FiCaSchedulerNode
-			this.slot = node.getAvailableResource().getMemory() / MIN_SLOT_MEMORY;
-			// LOG.fatal("[Slot] update: " + this.slot + " -> " +
-			// node.getHostName());
-		}
-
-		// TODO: how to calcuate effice flow rate
-		public void updateLoad() {
-			int sumOfLoad = 0;
-			for (FlowNetworkTask task : launchedTasks) {
-				sumOfLoad += task.flowRate.flowIn;
-			}
-			this.load = sumOfLoad;
+		public int getAvailableSlots() {
+			return node.getAvailableResource().getMemory() / MIN_SLOT_MEMORY;
 		}
 
 		public void launchTask(FlowNetworkTask task) {
 			launchedTasks.add(task);
-			// should update? will be update periodically
 			update();
 		}
 
@@ -293,9 +279,14 @@ public class FlowNetworkMonitor {
 			return this == obj;
 		}
 
+		public String getNodeResourceStatus() {
+			return "[#] Node: " + node.getHostName() + " -> running: " + node.getRunningContainers().size() + ", used: " + node.getUsedResource() + ", available: " + node.getAvailableResource();
+		}
+
 		public String getNodeStatus() {
 			StringBuilder builder = new StringBuilder();
-			builder.append("Node: " + node.getHostName() + " -> capacity=" + capacity + ", load=" + load + ", slot=" + slot + ", launched=" + launchedTasks.size() + "\n");
+			builder.append("[*] Node: " + node.getHostName() + " -> capacity=" + capacity + ", load=" + getEffectiveLoad() + ", slot_capacity=" + getSlotCapability() + ", slot="
+					+ this.getAvailableSlots() + ", launched=" + launchedTasks.size() + "\n");
 			for (FlowNetworkTask task : launchedTasks) {
 				builder.append("\t launched task: " + task + "\n");
 			}
@@ -307,246 +298,121 @@ public class FlowNetworkMonitor {
 			return "Node_" + node.getHostName();
 		}
 
+		public double getEffectiveLoad() {
+			return this.effective_load;
+		}
+
+		public double getSlotCapability() {
+			return this.slot_capability;
+		}
+
+		// non-linear load calculation CPU-bound vs. network-bound
+		private double calculateEffectiveLoad() {
+			double sumOfLoad = 0;
+			for (FlowNetworkTask task : this.launchedTasks) {
+				sumOfLoad += task.flowRate.flowIn;
+			}
+			List<Double> numbers = new LinkedList<Double>();
+			for (FlowNetworkTask taskInNode : this.launchedTasks) {
+				numbers.add(taskInNode.flowRate.flowIn);
+			}
+			double std = (int) MathUtil.calcuateStd(numbers);
+			double facotr = 0.1;
+			double effective_load = sumOfLoad - facotr * std;
+			return effective_load;
+		}
+
+		private double calculateSlotCapacity() {
+			slot_capability = 0;
+			if (getAvailableSlots() != 0) {
+				slot_capability = (this.capacity - getEffectiveLoad()) / getAvailableSlots();
+			}
+			return slot_capability;
+		}
+
 	}
 
 	class FlowNetworkApp {
 		FiCaSchedulerApp app;
-		// int numOfLaunchedMap = 0;
-		// int numOfLaunchedReduce = 0;
+		FlowRate mapFlowRate, reduceFlowRate;
+		Map<RMContainer, FlowNetworkTask> launchedTaskMap = new HashMap<RMContainer, FlowNetworkMonitor.FlowNetworkTask>();
 
-		Map<RMContainer, FlowNetworkTask> containerTaskMap = new HashMap<RMContainer, FlowNetworkTask>();
-		private boolean createAppMaster = false;
-		private boolean createMap = false;
-		private boolean createReduce = false;
-		// List<FlowNetworkTask> tasks = new
-		// LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-		List<FlowNetworkTask> mapTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-		List<FlowNetworkTask> reduceTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-		FlowNetworkTask appMasterTask;
+		int numOfMapTasks = 0;
+		int numOfReduceTasks = 0;
 
-		public FlowNetworkApp(FiCaSchedulerApp app) {
+		public FlowNetworkApp(FiCaSchedulerApp app, FlowRate mapFlowRate, FlowRate reduceFlowRate) {
 			this.app = app;
+			this.mapFlowRate = mapFlowRate;
+			this.reduceFlowRate = reduceFlowRate;
 		}
 
-		public FlowNetworkTask lookupTask(RMContainer container) {
-			return containerTaskMap.get(container);
-		}
-
-		// create a task after it has been launched
-		public FlowNetworkTask launchTask(RMContainer container) {
-			Type type = getTaskType(container.getContainer().getPriority());
-			for (FlowNetworkTask task : getTasks()) {
-				if (!task.launched && task.type.equals(type)) {
-					LOG.fatal("<> task launched: " + task);
-					task.launched = true;
-					containerTaskMap.put(container, task);
-					return task;
-				}
+		private FlowRate getFlowRate(Type type) {
+			if (type.equals(Type.Map)) {
+				return mapFlowRate;
+			} else if (type.equals(Type.Reduce)) {
+				return reduceFlowRate;
+			} else if (type.equals(Type.AppMaster)) {
+				return new FlowRate(1, 1);
 			}
-			return null;
+			return conf.getFlowRate(Job.DEFAULT, type);
 		}
 
-		public FlowNetworkTask completeTask(RMContainer container) {
-			FlowNetworkTask task = containerTaskMap.get(container);
-			task.completed = true;
-			// task.rmContainer = null;
-			return task;
+		public void updateNumOfMapTasks(ResourceRequest request) {
+			this.numOfMapTasks = request.getNumContainers() > this.numOfMapTasks ? request.getNumContainers() : this.numOfMapTasks;
 		}
 
-		public boolean isTaskTypeCreated(int priority) {
-			if (priority == 0) {
-				return this.createAppMaster;
-			} else if (priority == 10) {
-				return this.createReduce;
-			} else {
-				return this.createMap;
-			}
+		public void updateNumOfReduceTasks(ResourceRequest request) {
+			this.numOfReduceTasks = request.getNumContainers() > this.numOfReduceTasks ? request.getNumContainers() : this.numOfReduceTasks;
 		}
 
-		public boolean hasUnlaunchedTasks() {
-			for (FlowNetworkTask task : getTasks()) {
-				if (task != null && !task.launched) {
-					return true;
-				}
-			}
-			return false;
+		public int getNumOfMapTasks() {
+			return this.numOfMapTasks;
 		}
 
-		public boolean hasIncompletedMapTasks() {
-			for (FlowNetworkTask task : getTasks()) {
-				if (task != null && task.type.equals(Type.Map) && !task.completed) {
-					return true;
-				}
-			}
-			return false;
+		public int getNumOfReduceTasks() {
+			return this.numOfReduceTasks;
 		}
 
-		public boolean hasIncompletedReduceTasks() {
-			for (FlowNetworkTask task : getTasks()) {
-				if (task != null && task.type.equals(Type.Reduce) && !task.completed) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		public List<FlowNetworkTask> getCompletedMapTasks() {
-			List<FlowNetworkTask> completedTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-			for (FlowNetworkTask task : mapTasks) {
-				if (task.completed) {
-					completedTasks.add(task);
-				}
-			}
-			return completedTasks;
-		}
-
-		public List<FlowNetworkTask> getCompletedReduceTasks() {
-			List<FlowNetworkTask> completedTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-			for (FlowNetworkTask task : reduceTasks) {
-				if (task.completed) {
-					completedTasks.add(task);
-				}
-			}
-			return completedTasks;
-		}
-
-		public void rebuildTask() {
-			LOG.fatal("[Rebuild] check...");
-			for (Priority priority : app.getPriorities()) {
-				if (priority.getPriority() == PRIORITY_MAP) {
-					if (!hasIncompletedMapTasks()) {
-						LOG.fatal("[Rebuild] all map tasks finish");
-						ResourceRequest request = app.getResourceRequest(priority, FiCaSchedulerNode.ANY);
-						List<FlowNetworkTask> completedReduceTasks = getCompletedMapTasks();
-						LOG.fatal("[Rebuild] still requires map containers: " + request.getNumContainers());
-						for (int i = 0; i < request.getNumContainers(); i++) {
-							FlowNetworkTask task = completedReduceTasks.get(i);
-							LOG.fatal("[Rebuild] rebuild map task: " + task);
-							task.launched = false;
-							task.rmContainer = null;
-							task.node = null;
-							task.completed = false;
-						}
-					} else {
-						LOG.fatal("[Rebuild] still has incompleted map tasks");
-					}
-				} else if (priority.getPriority() == PRIORITY_REDUCE) {
-					if (!hasIncompletedReduceTasks()) {
-						LOG.fatal("[Rebuild] all reduce tasks finish");
-						ResourceRequest request = app.getResourceRequest(priority, FiCaSchedulerNode.ANY);
-						List<FlowNetworkTask> completedReduceTasks = getCompletedReduceTasks();
-						LOG.fatal("[Rebuild] still requires reduce containers: " + request.getNumContainers());
-						for (int i = 0; i < request.getNumContainers(); i++) {
-							FlowNetworkTask task = completedReduceTasks.get(i);
-							LOG.fatal("[Rebuild] rebuild reduce task: " + task);
-							task.launched = false;
-							task.rmContainer = null;
-							task.node = null;
-							task.completed = false;
-						}
-					} else {
-						LOG.fatal("[Rebuild] still has incompleted reduce tasks");
-					}
-
-				}
-			}
-		}
-
-		// TODO: Tasks will be created in waves, if containers fail...should fix
-		public void update() {
-			if (createAppMaster && createMap && createReduce) {
-				rebuildTask();
-			} else {
-				buildTask();
-			}
-		}
-
-		public void buildTask() {
-			for (Priority priority : app.getPriorities()) {
-				if (priority.getPriority() == PRIORITY_MAP) {
-					if (!createMap) {
-						createMap = true;
-						Type type = getTaskType(priority);
-						FlowRate flowRate = getTaskFlowRate(lookupApp(app), type);
-						Map<String, ResourceRequest> requests = app.getResourceRequests(priority);
-						if (requests.size() == 3) {
-							for (Map.Entry<String, ResourceRequest> entry : requests.entrySet()) {
-								String host = entry.getKey();
-								ResourceRequest request = entry.getValue();
-								if (!host.contains("rack") && !host.contains("*")) {
-									LOG.fatal("<> request containers: " + request.getNumContainers());
-									for (int i = 0; i < request.getNumContainers(); i++) {
-										int slot = getTaskSlot(request);
-										FlowNetworkStorage storage = null;
-										storage = lookupStorage(host);
-										FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, this, storage);
-										mapTasks.add(task);
-										LOG.fatal("<> add task: " + task);
-									}
-								}
-							}
-						} else {
-							for (Map.Entry<String, ResourceRequest> entry : requests.entrySet()) {
-								String host = entry.getKey();
-								ResourceRequest request = entry.getValue();
-								if (host.contains("*")) {
-									LOG.fatal("<> request containers: " + request.getNumContainers());
-									for (int i = 0; i < request.getNumContainers(); i++) {
-										int slot = getTaskSlot(request);
-										FlowNetworkStorage storage = null;
-										FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, this, storage);
-										mapTasks.add(task);
-										LOG.fatal("<> add task: " + task);
-									}
-								}
-							}
-						}
-					}
-				} else if (priority.getPriority() == PRIORITY_REDUCE) {
-					if (!createReduce) {
-						createReduce = true;
-						Type type = getTaskType(priority);
-						FlowRate flowRate = getTaskFlowRate(lookupApp(app), type);
-						ResourceRequest request = app.getResourceRequest(priority, FiCaSchedulerNode.ANY);
-						for (int i = 0; i < request.getNumContainers(); i++) {
-							int slot = getTaskSlot(request);
-							FlowNetworkTask task = new FlowNetworkTask(Type.Reduce, flowRate, slot, this, null);
-							reduceTasks.add(task);
-						}
-					}
-				} else if (priority.getPriority() == PRIORITY_APPMASTER) {
-					if (!createAppMaster) {
-						createAppMaster = true;
-						Type type = getTaskType(priority);
-						FlowRate flowRate = getTaskFlowRate(lookupApp(app), type);
-						ResourceRequest request = app.getResourceRequest(priority, FiCaSchedulerNode.ANY);
-						int slot = getTaskSlot(request);
-						FlowNetworkTask task = new FlowNetworkTask(Type.AppMaster, flowRate, slot, this, null);
-						appMasterTask = task;
-					}
-				} else {
-					LOG.fatal("@@@@@@@@@@@@@@@@@@@@@@@@@ fail tasks found");
-				}
-			}
-		}
-
-		public List<FlowNetworkTask> getTasks() {
+		public List<FlowNetworkTask> getMapTasks() {
 			List<FlowNetworkTask> tasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-			tasks.add(appMasterTask);
-			tasks.addAll(mapTasks);
-			tasks.addAll(reduceTasks);
+			for (FlowNetworkTask task : launchedTaskMap.values()) {
+				if (task.type.equals(Type.Map)) {
+					tasks.add(task);
+				}
+			}
 			return tasks;
 		}
 
-		public List<FlowNetworkTask> getUnscheduleTasks() {
-			List<FlowNetworkTask> unscheduleTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
-			for (FlowNetworkTask task : getTasks()) {
-				// TODO: why can be null?balancing model
-				if (task != null && !task.launched) {
-					unscheduleTasks.add(task);
+		public List<FlowNetworkTask> getReduceTasks() {
+			List<FlowNetworkTask> tasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
+			for (FlowNetworkTask task : launchedTaskMap.values()) {
+				if (task.type.equals(Type.Reduce)) {
+					tasks.add(task);
 				}
 			}
-			return unscheduleTasks;
+			return tasks;
+		}
+
+		public FlowNetworkTask lookupTask(RMContainer container) {
+			return launchedTaskMap.get(container);
+		}
+
+		public FlowNetworkTask launchTask(RMContainer container) {
+			Type type = getTaskType(container.getContainer().getPriority());
+			int slot = getContainerSlot(container);
+			FlowRate flowRate = getFlowRate(type);
+			// Don't have the information of storage
+			FlowNetworkTask task = new FlowNetworkTask(type, flowRate, slot, this, null, container.getContainer().getPriority());
+			task.rmContainer = container;
+			this.launchedTaskMap.put(container, task);
+			return task;
+		}
+
+		public FlowNetworkTask completeTask(RMContainer container) {
+			return lookupTask(container);
+		}
+
+		public void update() {
 		}
 
 		public String toString() {
@@ -558,22 +424,22 @@ public class FlowNetworkMonitor {
 
 		Type type;
 		FlowRate flowRate;
+		int slot = 0;
+		// back reference
 		FlowNetworkApp app;
 		FlowNetworkNode node;
 		FlowNetworkStorage storage;
-		int slot; // the number of slots required, calculated by memory
-					// requirement
-		boolean launched = false;
-		boolean completed = false;
 
 		RMContainer rmContainer;
+		Priority priority;
 
-		public FlowNetworkTask(Type type, FlowRate flowRate, int slot, FlowNetworkApp app, FlowNetworkStorage storage) {
+		public FlowNetworkTask(Type type, FlowRate flowRate, int slot, FlowNetworkApp app, FlowNetworkStorage storage, Priority priority) {
 			this.type = type;
 			this.flowRate = flowRate;
-			this.app = app;
 			this.slot = slot;
+			this.app = app;
 			this.storage = storage;
+			this.priority = priority;
 		}
 
 		public void update() {
@@ -589,15 +455,8 @@ public class FlowNetworkMonitor {
 			return getName();
 		}
 
-		public int getPriority() {
-			if (this.type.equals(Type.AppMaster)) {
-				return PRIORITY_APPMASTER;
-			} else if (this.type.equals(Type.Map)) {
-				return PRIORITY_MAP;
-			} else if (this.type.equals(Type.Reduce)) {
-				return PRIORITY_REDUCE;
-			}
-			return -1;
+		public Priority getPriority() {
+			return priority;
 		}
 
 	}
@@ -611,14 +470,16 @@ public class FlowNetworkMonitor {
 			this.host = host;
 		}
 
+		// no use now
 		void launchTask(FlowNetworkTask task) {
-			servingTasks.add(task);
-			update();
+			// servingTasks.add(task);
+			// update();
 		}
 
+		// no use now
 		void completeTask(FlowNetworkTask task) {
-			servingTasks.remove(task);
-			update();
+			// servingTasks.remove(task);
+			// update();
 		}
 
 		void update() {
@@ -667,6 +528,88 @@ public class FlowNetworkMonitor {
 	class FlowNetworkPoint {
 		int capacity;
 		int load;
+	}
+
+	public List<FlowNetworkTask> buildUnscheduledTasks(List<FiCaSchedulerApp> launchedApps) {
+		List<FlowNetworkTask> unscheduledTasks = new LinkedList<FlowNetworkMonitor.FlowNetworkTask>();
+		for (FiCaSchedulerApp launchedApp : launchedApps) {
+
+			FlowNetworkApp myApp = lookupApp(launchedApp);
+
+			for (Priority priority : launchedApp.getPriorities()) {
+				Type type = getTaskType(priority);
+				FlowRate flowRate = getTaskFlowRate(myApp, type);
+				if (type.equals(Type.Map)) {
+					Map<String, ResourceRequest> requests = launchedApp.getResourceRequests(priority);
+					myApp.updateNumOfMapTasks(requests.get("*"));
+					if (requests.size() == 3) { // normal jobs with map and
+												// reduce tasks
+						ResourceRequest request = launchedApp.getResourceRequest(priority, FiCaSchedulerNode.ANY);
+						myApp.updateNumOfMapTasks(request);
+						for (int i = 0; i < request.getNumContainers(); i++) {
+							int slot = getTaskSlot(request);
+							FlowNetworkStorage storage = null;
+							// hava a big problem here...
+							// storage = lookupStorage(host);
+							storage = randomStorage();
+							FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, myApp, storage, priority);
+							unscheduledTasks.add(task);
+						}
+
+						/**
+						 * for (Map.Entry<String, ResourceRequest> entry :
+						 * requests.entrySet()) { String host = entry.getKey();
+						 * ResourceRequest request = entry.getValue(); // for
+						 * data locality if (!host.contains("rack") &&
+						 * !host.contains("*")) { for (int i = 0; i <
+						 * request.getNumContainers(); i++) { int slot =
+						 * getTaskSlot(request); FlowNetworkStorage storage =
+						 * null; storage = lookupStorage(host); FlowNetworkTask
+						 * task = new FlowNetworkTask(Type.Map, flowRate, slot,
+						 * myApp, storage); unscheduledTasks.add(task); } } }
+						 */
+					} else { // this happens when no need of data from data node
+						ResourceRequest request = launchedApp.getResourceRequest(priority, FiCaSchedulerNode.ANY);
+						myApp.updateNumOfMapTasks(request);
+						for (int i = 0; i < request.getNumContainers(); i++) {
+							int slot = getTaskSlot(request);
+							FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, myApp, null, priority);
+							unscheduledTasks.add(task);
+						}
+					}
+
+				} else if (type.equals(Type.Reduce)) {
+					ResourceRequest request = launchedApp.getResourceRequest(priority, FiCaSchedulerNode.ANY);
+					myApp.updateNumOfReduceTasks(request);
+					for (int i = 0; i < request.getNumContainers(); i++) {
+						int slot = getTaskSlot(request);
+						FlowNetworkTask task = new FlowNetworkTask(Type.Reduce, flowRate, slot, myApp, null, priority);
+						unscheduledTasks.add(task);
+					}
+				} else if (type.equals(Type.AppMaster)) {
+					ResourceRequest request = launchedApp.getResourceRequest(priority, FiCaSchedulerNode.ANY);
+					if (request.getNumContainers() == 1) {
+						int slot = getTaskSlot(request);
+						FlowNetworkTask task = new FlowNetworkTask(Type.AppMaster, flowRate, slot, myApp, null, priority);
+						unscheduledTasks.add(task);
+					}
+				} else if (type.equals(Type.UNKNOWN)) {
+					ResourceRequest request = launchedApp.getResourceRequest(priority, FiCaSchedulerNode.ANY);
+					LOG.fatal("@@ unknown task priority: " + priority + "->" + request.getCapability() + ", " + request.getNumContainers());
+					// myApp.updateNumOfMapTasks(request);
+					for (int i = 0; i < request.getNumContainers(); i++) {
+						int slot = getTaskSlot(request);
+						FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, myApp, null, priority);
+						unscheduledTasks.add(task);
+					}
+				}
+			}
+		}
+		return unscheduledTasks;
+	}
+
+	private int getContainerSlot(RMContainer container) {
+		return (int) Math.ceil(container.getContainer().getResource().getMemory() / 512);
 	}
 
 }

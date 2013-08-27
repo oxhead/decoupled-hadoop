@@ -172,14 +172,14 @@ public class MinCostFlowModel implements AssignmentModel {
 
 		int availableSlots = 0;
 		for (FlowNetworkNode node : nodes) {
-			availableSlots += node.slot;
+			availableSlots += node.getAvailableSlots();
 		}
 		clusterStatus.maxAllowedSlots = availableSlots;
 
 		double minLoading = Double.MAX_VALUE;
 		for (FlowNetworkNode node : nodes) {
-			if (node.load < minLoading) {
-				minLoading = node.load;
+			if (node.getEffectiveLoad() < minLoading) {
+				minLoading = node.getEffectiveLoad();
 			}
 		}
 		clusterStatus.minLoading = minLoading;
@@ -290,7 +290,7 @@ public class MinCostFlowModel implements AssignmentModel {
 					// solution
 					double cost = calculateTaskCost(node, task, clusterStatus);
 					Arc arc = net.addArc(taskNode, computingNode, 0, 1, (int) (cost * cost_scale));
-					LOG.fatal("@ [Arc] " + arc);
+					// LOG.fatal("@ [Arc] " + arc);
 				}
 			}
 
@@ -303,8 +303,8 @@ public class MinCostFlowModel implements AssignmentModel {
 		for (Map.Entry<FlowNetworkNode, Node> entry : my_node_map.entrySet()) {
 			Node computingNode = entry.getValue();
 			// TODO: should modify
-			double cost = calculateUnusedCapacityCost(entry.getKey());
-			Arc arc = net.addArc(computingNode, sink, 0, entry.getKey().slot, (int) (cost * cost_scale));
+			double cost = -entry.getKey().getSlotCapability();
+			Arc arc = net.addArc(computingNode, sink, 0, entry.getKey().getAvailableSlots(), (int) (cost * cost_scale));
 			// LOG.fatal("$ [Arc] " + arc);
 		}
 
@@ -320,33 +320,24 @@ public class MinCostFlowModel implements AssignmentModel {
 		LOG.fatal("@@ unscheduled: " + numOfUnscheduledTasks);
 	}
 
-	// TODO: should be able to support covex function
-	private double calculateUnusedCapacityCost(FlowNetworkNode node) {
-		double node_effictive_load = calculateEffectiveLoad(node);
-		double slot_affordable_load = node_effictive_load / node.slot;
-		double cost = slot_affordable_load;
-		return cost;
-
-	}
-
 	private double calculateTaskCost(FlowNetworkNode node, FlowNetworkTask task, ClusterStatus clusterStatus) {
 		double cost = 0;
 		if (task.type.equals(Type.AppMaster)) {
 			cost = calculateAppMasterCost(node, task, clusterStatus);
 		} else if (task.type.equals(Type.Map)) {
 			cost = calculateMapCost(node, task, clusterStatus);
-			double randomCost = new Random().nextInt() % 10 / 10.0;
+			double randomCost = new Random().nextInt(10) / 10.0;
 			cost += randomCost;
 		} else if (task.type.equals(Type.Reduce)) {
 			cost = calculateReduceCost(node, task, clusterStatus);
-			double randomCost = new Random().nextInt() % 10;
+			double randomCost = new Random().nextInt(10);
 			cost += randomCost;
 		}
 		return cost;
 	}
 
 	private double calculateAppMasterCost(FlowNetworkNode node, FlowNetworkTask task, ClusterStatus clusterStatus) {
-		double freeCapability = node.capacity - node.load;
+		double freeCapability = node.capacity - node.getEffectiveLoad();
 		return freeCapability;
 	}
 
@@ -355,7 +346,7 @@ public class MinCostFlowModel implements AssignmentModel {
 		if (task.type.equals(Type.Map)) {
 			return task.flowRate.flowIn * 2;
 		} else if (task.type.equals(Type.Reduce)) {
-			return (task.app.mapTasks.size() / (double) task.app.reduceTasks.size()) * (task.flowRate.flowIn + task.flowRate.flowOut) * 10;
+			return (task.app.getNumOfMapTasks() / (double) task.app.getNumOfReduceTasks()) * (task.flowRate.flowIn + task.flowRate.flowOut) * 10;
 		}
 		return 0;
 	}
@@ -364,7 +355,10 @@ public class MinCostFlowModel implements AssignmentModel {
 		double cost_processing = calculateMapFlowProcessingPenaltyCost(task, node, clusterStatus);
 		double cost_flowin = calculateMapFlowInQualityCost(task, task.storage);
 		double cost = cost_processing + cost_flowin;
-		LOG.fatal("[Cost] " + task + " -> " + node + " \n\tprocessing=" + cost_processing + ", flowin=" + cost_flowin + ", cost=" + cost);
+		// LOG.fatal("[MC] " + task + "->" + node + "\n\tload=" +
+		// node.getEffectiveLoad() + ", slot_capacity=" +
+		// node.getSlotCapability() + ", " + "require=" + task.flowRate.flowIn +
+		// " => cost=" + cost_processing);
 		return cost;
 	}
 
@@ -373,30 +367,21 @@ public class MinCostFlowModel implements AssignmentModel {
 		double cost_flowin = calculateReduceFlowInQualityCost(task, node, clusterStatus);
 		double cost_flowout = calculateReduceFlowOutQualityCost(task, clusterStatus);
 		double cost = cost_processing + cost_flowin + cost_flowout;
-		LOG.fatal("[Cost] " + task + " -> " + node + " \n\tprocessing=" + cost_processing + ", flowin=" + cost_flowin + ", flowout=" + cost_flowout + ", cost=" + cost);
+		// LOG.fatal("[RC] " + task + "->" + node + "\n\tload=" +
+		// node.getEffectiveLoad() + ", slot_capacity=" +
+		// node.getSlotCapability() + ", " + "require=" + task.flowRate.flowIn +
+		// " => cost="+ cost_processing);
 		return cost;
 	}
 
 	private double calculateMapFlowProcessingPenaltyCost(FlowNetworkTask task, FlowNetworkNode node, ClusterStatus status) {
-		double node_effictive_load = calculateEffectiveLoad(node);
-		LOG.fatal("[LOAD] effective: " + node_effictive_load + " -> " + node_effictive_load);
-		double cost = (1 + (node_effictive_load / node.capacity)) * task.flowRate.flowIn;
+		double slot_capacity = node.getSlotCapability();
+		double cost = 0;
+		if (task.flowRate.flowIn > slot_capacity) {
+			cost = task.flowRate.flowIn - slot_capacity;
+		}
+		// cost = Math.abs(task.flowRate.flowIn - slot_capacity);
 		return cost;
-	}
-
-	private double calculateEffectiveLoad(FlowNetworkNode node) {
-		double sumOfLoad = 0;
-		for (FlowNetworkTask task : node.launchedTasks) {
-			sumOfLoad += task.flowRate.flowIn;
-		}
-		List<Double> numbers = new LinkedList<Double>();
-		for (FlowNetworkTask taskInNode : node.launchedTasks) {
-			numbers.add(taskInNode.flowRate.flowIn);
-		}
-		double std = (int) MathUtil.calcuateStd(numbers);
-		double facotr = 0.1;
-		double effective_load = sumOfLoad - facotr * std;
-		return (int) effective_load;
 	}
 
 	// TODO: better model
@@ -411,26 +396,30 @@ public class MinCostFlowModel implements AssignmentModel {
 
 	// load balancing
 	private double calculateReduceFlowProcessingQualityCost(FlowNetworkTask task, FlowNetworkNode node, ClusterStatus status) {
-		double node_effictive_load = calculateEffectiveLoad(node);
 		double reduce_total_capability = calculateEffectiveReduceCapability(task);
-		double cost = (1 + node_effictive_load / node.capacity) * reduce_total_capability;
+		double slot_capacity = node.getSlotCapability();
+		double cost = 0;
+		if (reduce_total_capability > slot_capacity) {
+			cost = reduce_total_capability - slot_capacity;
+		}
+		// cost = Math.abs(reduce_total_capability - slot_capacity);
 		return cost;
 	}
 
 	private double calculateEffectiveReduceCapability(FlowNetworkTask task) {
-		int numOfMapTasks = task.app.mapTasks.size();
-		int numOfReduceTasks = task.app.reduceTasks.size();
+		int numOfMapTasks = task.app.getNumOfMapTasks();
+		int numOfReduceTasks = task.app.getNumOfReduceTasks();
 		double effective_capability = numOfMapTasks / numOfReduceTasks * task.flowRate.flowIn;
 		return effective_capability;
 	}
 
 	// TODO: better model
 	private double calculateReduceFlowInQualityCost(FlowNetworkTask task, FlowNetworkNode node, ClusterStatus clusterStatus) {
-		int numberOfReduceTasks = task.app.reduceTasks.size();
+		int numberOfReduceTasks = task.app.getNumOfReduceTasks();
 		// better way? not just capacity, should have flowIn and flowOut in task
 		double reduceFlowInRateRatio = 1.0 / numberOfReduceTasks;
 		double cost = 0;
-		for (FlowNetworkTask mapTask : task.app.mapTasks) {
+		for (FlowNetworkTask mapTask : task.app.getMapTasks()) {
 			FlowNetworkNode mapNode = mapTask.node;
 			// TODO: seems reduce tasks start earlier, cost model might not be
 			// accurate
@@ -441,17 +430,17 @@ public class MinCostFlowModel implements AssignmentModel {
 					// LOG.fatal("<> same node: " + node);
 
 				} else if (inSameRack(node, mapNode)) {
-					double mapFlowOutCost = (1 + mapNode.load / mapNode.capacity) * effictiveMapFlowOut / 2;
+					double mapFlowOutCost = (1 + mapNode.getEffectiveLoad() / mapNode.capacity) * effictiveMapFlowOut / 2;
 					cost += mapFlowOutCost;
 					// LOG.fatal("<> same rack: " + node + " -> " + mapNode);
 				} else {
-					double mapFlowOutCost = (1 + mapNode.load / mapNode.capacity) * effictiveMapFlowOut * 5;
+					double mapFlowOutCost = (1 + mapNode.getEffectiveLoad() / mapNode.capacity) * effictiveMapFlowOut * 5;
 					cost += mapFlowOutCost;
 					// LOG.fatal("<> off rack: " + node + " -> " + mapNode);
 				}
 
 			} else {
-				LOG.fatal("@_@ seems task hasn't been launched: " + task + "->" + task.launched);
+				LOG.fatal("@_@ seems task hasn't been launched: " + task);
 			}
 
 		}
@@ -470,8 +459,8 @@ public class MinCostFlowModel implements AssignmentModel {
 
 	// TODO: better model
 	private double calculateReduceFlowOutQualityCost(FlowNetworkTask task, ClusterStatus status) {
-		int numOfMapTasks = task.app.mapTasks.size();
-		int numOfReduceTasks = task.app.reduceTasks.size();
+		int numOfMapTasks = task.app.getNumOfMapTasks();
+		int numOfReduceTasks = task.app.getNumOfReduceTasks();
 		// TODO: this should be R_out for reduce, not capacity
 		double effective_capability = numOfMapTasks / numOfReduceTasks * task.flowRate.flowIn;
 		double cost = 0;
