@@ -34,13 +34,6 @@
 
   <dependencies>
     <dependency>
-      <groupId>JaCoP</groupId>
-      <artifactId>JaCoP</artifactId>
-      <version>3.2</version>
-      <scope>system</scope>
-      <systemPath>/Users/oxhead/Downloads/JaCoP-3.2.jar</systemPath>
-    </dependency>
-    <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-yarn-server-common</artifactId>
     </dependency>

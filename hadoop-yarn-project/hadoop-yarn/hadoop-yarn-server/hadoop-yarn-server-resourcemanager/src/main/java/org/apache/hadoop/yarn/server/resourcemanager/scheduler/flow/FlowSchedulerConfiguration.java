@@ -18,12 +18,14 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow;
 
-import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowNetworkMonitor.FlowNetworkStorage;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.Task.Type;
 
 public class FlowSchedulerConfiguration extends Configuration {
@@ -57,6 +59,9 @@ public class FlowSchedulerConfiguration extends Configuration {
 	public static final String FLOWRATE_GREP = PREFIX + "flowrate.grep";
 
 	@Private
+	public static final String FLOWRATE_NETWORKINTENSIVE = PREFIX + "flowrate.networkintensive";
+
+	@Private
 	public static final String FLOWRATE_DEFAULT = PREFIX + "flowrate.default";
 
 	@Private
@@ -72,7 +77,7 @@ public class FlowSchedulerConfiguration extends Configuration {
 	}
 
 	public enum Job {
-		TERASORT, WORDCOUNT, GREP, DEFAULT
+		TERASORT, WORDCOUNT, GREP, NETWORKINTENSIVE, DEFAULT
 	}
 
 	public String getSolverPath() {
@@ -93,6 +98,8 @@ public class FlowSchedulerConfiguration extends Configuration {
 			flowRateString = getStrings(FLOWRATE_WORDCOUNT);
 		} else if (job.equals(Job.GREP)) {
 			flowRateString = getStrings(FLOWRATE_GREP);
+		} else if (job.equals(Job.NETWORKINTENSIVE)) {
+			flowRateString = getStrings(FLOWRATE_NETWORKINTENSIVE);
 		} else {
 			flowRateString = getStrings(FLOWRATE_DEFAULT);
 		}
@@ -128,4 +135,5 @@ public class FlowSchedulerConfiguration extends Configuration {
 		}
 		return capacity;
 	}
+
 }

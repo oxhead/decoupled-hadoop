@@ -34,7 +34,7 @@ public class FifoModel implements AssignmentModel {
 
 		Map<FlowNetworkNode, Integer> slotMap = new HashMap<FlowNetworkNode, Integer>();
 		for (FlowNetworkNode node : nodes) {
-			slotMap.put(node, node.slot);
+			slotMap.put(node, node.getAvailableSlots());
 		}
 
 		LOG.fatal("# nodes: " + nodes.size());

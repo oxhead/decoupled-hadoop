@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -191,7 +192,7 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 			this.initialized = true;
 
 			this.flownetwork_period = newConf.getFlowNetworkPeriod();
-			this.updatorPool = new ScheduledThreadPoolExecutor(flownetwork_period);
+			this.updatorPool = new ScheduledThreadPoolExecutor(100);
 			this.flowNetworkMonitor = new FlowNetworkMonitor(rmContext, newConf);
 			solver = new CS2Solver(newConf.getSolverPath());
 
@@ -200,12 +201,13 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 				@Override
 				public void run() {
 					try {
+						printStatus();
 						updateFlowNetwork();
 					} catch (Throwable t) {
 						LOG.fatal("MinCostFlow module worked abnormally!!!", t);
 					}
 				}
-			}, 10, 5, TimeUnit.SECONDS);
+			}, 10, flownetwork_period, TimeUnit.SECONDS);
 		}
 	}
 
@@ -247,6 +249,7 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 				// LOG.fatal("allocate: pre-update" + " applicationId=" +
 				// applicationAttemptId + " application=" +
 				// application.getApplicationId());
+
 				// application.showRequests();
 				// LOG.fatal("Before updating ask requests");
 				// showRequests(application);
@@ -293,6 +296,7 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		metrics.submitApp(user, appAttemptId.getAttemptId());
 		LOG.info("Application Submission: " + appAttemptId.getApplicationId() + " from " + user + ", currently active: " + applications.size());
 		rmContext.getDispatcher().getEventHandler().handle(new RMAppAttemptEvent(appAttemptId, RMAppAttemptEventType.APP_ACCEPTED));
+
 		flowNetworkMonitor.addApp(schedulerApp);
 	}
 
@@ -462,13 +466,15 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 	}
 
 	private int assignContainer(FiCaSchedulerNode node, FiCaSchedulerApp application, Priority priority, int assignableContainers, ResourceRequest request, NodeType type, FlowNetworkTask task) {
-		LOG.fatal("assignContainers:" + " node=" + node.getRMNode().getNodeAddress() + " application=" + application.getApplicationId().getId() + " priority=" + priority.getPriority()
+		LOG.fatal("assignContainer:" + " node=" + node.getRMNode().getNodeAddress() + " application=" + application.getApplicationAttemptId() + " priority=" + priority.getPriority()
 				+ " assignableContainers=" + assignableContainers + " request=" + request + " type=" + type);
 		Resource capability = request.getCapability();
 
 		// TODO: A buggy
 		int availableContainers = node.getAvailableResource().getMemory() / capability.getMemory();
 		int assignedContainers = Math.min(assignableContainers, availableContainers);
+
+		LOG.fatal("@ available: " + availableContainers + ", assigned: " + assignableContainers);
 
 		if (assignedContainers > 0) {
 			for (int i = 0; i < assignedContainers; ++i) {
@@ -499,6 +505,8 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 
 					// Update usage for this container
 					Resources.addTo(usedResource, capability);
+				} else {
+					LOG.fatal("$ allication cannot allocate container");
 				}
 
 			}
@@ -526,34 +534,28 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 			RMContainer container = getRMContainer(containerId);
 			FiCaSchedulerApp app = getApplication(container.getApplicationAttemptId());
 
-			flowNetworkMonitor.launchTask(node, container, app);
+			flowNetworkMonitor.launchTask(node, app, container);
 		}
 
 		// Process completed containers
 		for (ContainerStatus completedContainer : completedContainers) {
 			ContainerId containerId = completedContainer.getContainerId();
 			RMContainer container = getRMContainer(containerId);
+			if (container == null) {
+				LOG.fatal("Skip null container: " + containerId);
+				continue;
+			}
 			FiCaSchedulerApp app = getApplication(container.getApplicationAttemptId());
 
 			LOG.fatal("Container FINISHED: " + containerId + " -> status: " + completedContainer.getExitStatus() + " => msg: " + completedContainer.getDiagnostics());
 			containerCompleted(container, completedContainer, RMContainerEventType.FINISHED);
 
-			FlowNetworkTask task = flowNetworkMonitor.lookupTask(container);
-			if (task != null) {
-				LOG.fatal("<> task finished: " + task + " -> " + container + "(" + container.getState() + ") =>" + task.app.app.getApplicationAttemptId());
-				// No use here
-				if (container.getState().equals(RMContainerState.KILLED)) {
-					task.launched = false;
-				}
-
-				flowNetworkMonitor.completeTask(node, container, app);
-			} else {
-				LOG.fatal("<> missing container->task mapping: " + container);
-			}
+			flowNetworkMonitor.completeTask(node, container, app);
 		}
 
 		// Disable assignment on node udpate
 		if (Resources.greaterThanOrEqual(resourceCalculator, clusterResource, node.getAvailableResource(), minimumAllocation)) {
+			// updateFlowNetwork();
 			// assignContainers(node);
 		}
 
@@ -717,8 +719,10 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 			// if (node.getAvailableResource().getMemory() > 0) {
 			// TODO: might have problems
 			if (node.getAvailableResource().getMemory() / 512 > 0) {
-				LOG.fatal("[Available] node: " + node.getHostName() + " -> " + "running: " + node.getRunningContainers().size() + ", used: " + node.getUsedResource() + ", available: "
-						+ node.getAvailableResource());
+				// LOG.fatal("[Available] node: " + node.getHostName() + " -> "
+				// + "running: " + node.getRunningContainers().size() +
+				// ", used: " + node.getUsedResource() + ", available: "+
+				// node.getAvailableResource());
 				availableNodes.add(node);
 			}
 		}
@@ -742,22 +746,9 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		return apps;
 	}
 
-	private void updateFlowNetwork() {
-		LOG.fatal("#################################################");
-		LOG.fatal("# Update flow network: " + applications.size());
-		LOG.fatal("# cluster: " + clusterResource + ", used: " + usedResource);
-		LOG.fatal("#################################################");
-
-		flowNetworkMonitor.update(flownetwork_period);
+	private void printStatus() {
+		// flowNetworkMonitor.update(flownetwork_period);
 		flowNetworkMonitor.printNodeStatus();
-
-		List<FiCaSchedulerNode> availableNodes = getAvailableNodes();
-		List<FiCaSchedulerApp> schedulableApps = getSchedulableApps();
-
-		if (availableNodes.size() == 0 || schedulableApps.size() == 0) {
-			LOG.fatal("[Scheduler] no need to schedule");
-			return;
-		}
 
 		LOG.fatal("----------------------------------------");
 		LOG.fatal("Resource request table");
@@ -765,11 +756,27 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		for (FiCaSchedulerApp app : applications.values()) {
 			showRequests(app);
 		}
+	}
+
+	private synchronized void updateFlowNetwork() {
+		// LOG.fatal("#################################################");
+		// LOG.fatal("# Update flow network: " + applications.size());
+		// LOG.fatal("# cluster: " + clusterResource + ", used: " +
+		// usedResource);
+		// LOG.fatal("#################################################");
+
+		List<FiCaSchedulerNode> availableNodes = getAvailableNodes();
+		List<FiCaSchedulerApp> schedulableApps = getSchedulableApps();
+
+		if (availableNodes.size() == 0 || schedulableApps.size() == 0) {
+			// LOG.fatal("[Scheduler] no need to schedule");
+			return;
+		}
 
 		// Ready to assign tasks onto nodes
 		List<Assignment> assignments = null;
 		List<FlowNetworkNode> nodes = flowNetworkMonitor.getNodes();
-		List<FlowNetworkTask> tasks = flowNetworkMonitor.getUnscheduleTasks();
+		List<FlowNetworkTask> tasks = flowNetworkMonitor.buildUnscheduledTasks(new LinkedList<FiCaSchedulerApp>(applications.values()));
 		List<FlowNetworkStorage> storageNodes = flowNetworkMonitor.getStorageNodes();
 
 		if (tasks.size() == 0) {
@@ -801,13 +808,17 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 
 		LOG.fatal("[Scheduler] # of assignments: " + assignments.size());
 
+		printAssignmentResults(assignments);
+
 		// Allocate containers to tasks
 		// TODO: retrieve assignment result, assigning...
 		for (Assignment assignment : assignments) {
 			FiCaSchedulerNode node = assignment.getNode().node;
 			FiCaSchedulerApp application = assignment.getTask().app.app;
 			int assignableContainers = 1;
-			Priority priority = org.apache.hadoop.yarn.server.resourcemanager.resource.Priority.create(assignment.task.getPriority());
+			// Priority priority =
+			// org.apache.hadoop.yarn.server.resourcemanager.resource.Priority.create(assignment.task.getPriority());
+			Priority priority = assignment.task.getPriority();
 			ResourceRequest request = null;
 			// TODO: smart here...hard to distinguish the type...
 			// Request from tasks are not correct because
@@ -816,7 +827,7 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 			if (priority.getPriority() == 0) {
 				type = NodeType.OFF_SWITCH;
 				request = application.getResourceRequest(priority, FiCaSchedulerNode.ANY);
-			} else if (priority.getPriority() == 20) {
+			} else if (priority.getPriority() == 20 || priority.getPriority() == 5) {
 				// TODO: no input data should not be RACK
 				type = NodeType.RACK_LOCAL;
 				request = application.getResourceRequest(priority, node.getRMNode().getRackName());
@@ -840,6 +851,27 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 			application.setHeadroom(Resources.subtract(clusterResource, usedResource));
 		}
 
+		metrics.setAvailableResourcesToQueue(Resources.subtract(clusterResource, usedResource));
+
+	}
+
+	private void printAssignmentResults(List<Assignment> assignments) {
+		Map<FlowNetworkNode, List<FlowNetworkTask>> assignmentMap = new HashMap<FlowNetworkMonitor.FlowNetworkNode, List<FlowNetworkMonitor.FlowNetworkTask>>();
+		for (FlowNetworkNode node : flowNetworkMonitor.getNodes()) {
+			assignmentMap.put(node, new LinkedList<FlowNetworkMonitor.FlowNetworkTask>());
+		}
+		for (Assignment assignment : assignments) {
+			List<FlowNetworkTask> tasks = assignmentMap.get(assignment.node);
+			tasks.add(assignment.task);
+			assignmentMap.put(assignment.node, tasks);
+		}
+
+		for (FlowNetworkNode node : flowNetworkMonitor.getNodes()) {
+			LOG.fatal("[] " + node);
+			for (FlowNetworkTask task : assignmentMap.get(node)) {
+				LOG.fatal("\t<new> " + task);
+			}
+		}
 	}
 
 	synchronized private void showRequests(FiCaSchedulerApp app) {
