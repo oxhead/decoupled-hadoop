@@ -165,6 +165,8 @@ public class JobImpl implements org.apache.hadoop.mapreduce.v2.app.job.Job,
   private final Object tasksSyncHandle = new Object();
   private final Set<TaskId> mapTasks = new LinkedHashSet<TaskId>();
   private final Set<TaskId> reduceTasks = new LinkedHashSet<TaskId>();
+  public TaskSplitMetaInfo[] splitInfo;
+  
   /**
    * maps nodes to tasks that have run on those nodes
    */
@@ -1260,6 +1262,8 @@ public class JobImpl implements org.apache.hadoop.mapreduce.v2.app.job.Job,
         //TODO JH Verify jobACLs, UserName via UGI?
 
         TaskSplitMetaInfo[] taskSplitMetaInfo = createSplits(job, job.jobId);
+        LOG.error("@@ AM: done with split creation");
+        job.splitInfo = taskSplitMetaInfo;
         job.numMapTasks = taskSplitMetaInfo.length;
         job.numReduceTasks = job.conf.getInt(MRJobConfig.NUM_REDUCES, 0);
 
@@ -1423,6 +1427,13 @@ public class JobImpl implements org.apache.hadoop.mapreduce.v2.app.job.Job,
       implements SingleArcTransition<JobImpl, JobEvent> {
     @Override
     public void transition(JobImpl job, JobEvent event) {
+    		LOG.error("@@ AM: start to delay the job execution");
+    		try{
+    		Thread.sleep(60*1000);
+    		} catch (Exception e) {
+    			LOG.debug("@@ AM: sleep with exception="+e);
+    		}
+    		LOG.error("@@ AM: end to delay the job execution");
       job.setupProgress = 1.0f;
       job.scheduleTasks(job.mapTasks);  // schedule (i.e., start) the maps
       job.scheduleTasks(job.reduceTasks);

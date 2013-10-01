@@ -18,9 +18,12 @@
 
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -31,15 +34,31 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.serializer.Deserializer;
+import org.apache.hadoop.io.serializer.SerializationFactory;
 import org.apache.hadoop.mapreduce.MRJobConfig;
+import org.apache.hadoop.mapreduce.TaskCounter;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
+import org.apache.hadoop.mapreduce.split.JobSplit.TaskSplitMetaInfo;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptId;
+import org.apache.hadoop.mapreduce.v2.api.records.TaskState;
+import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
+import org.apache.hadoop.mapreduce.v2.app.MRAppMaster.RunningAppContext;
 import org.apache.hadoop.mapreduce.v2.app.client.ClientService;
+import org.apache.hadoop.mapreduce.v2.app.job.Task;
+import org.apache.hadoop.mapreduce.v2.app.job.impl.MapTaskImpl;
+import org.apache.hadoop.util.StringInterner;
 import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
@@ -47,6 +66,7 @@ import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.util.PrefetchUtils;
 
 
 /**
@@ -142,13 +162,75 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     }
     LOG.info("blacklistDisablePercent is " + blacklistDisablePercent);
   }
+  
+  private List<PrefetchInfo> getPrefetchSplits() {
+	  LOG.error("@@ AM: request gets splits");
+	  TaskSplitMetaInfo[] splitInfo = ((RunningAppContext)getContext()).splitInfo;
+	  if (splitInfo == null || splitInfo.length < 1) {
+		  return null;
+	  }
+	  List<PrefetchInfo> prefetchList = new LinkedList<PrefetchInfo>();
+	  for (TaskSplitMetaInfo split: splitInfo) {
+		  try {
+			  org.apache.hadoop.mapreduce.InputSplit ss = getSplitDetails(new Path(split.getSplitLocation()), split.getStartOffset());
+			  FileSplit fss = (FileSplit) ss;
+			  PrefetchInfo pi = new PrefetchInfo();
+			  pi.meta = split.getSplitLocation();
+			  pi.metaOffset = String.valueOf(split.getStartOffset());
+			  pi.file = String.valueOf(fss.getPath());
+			  pi.fileOffset= String.valueOf(fss.getStart());
+			  pi.fileLength = String.valueOf(fss.getLength());
+			  prefetchList.add(pi);
+		} catch (IOException e) {
+			LOG.error("@@ prefetch fail: " + e);
+		}
+	  }
+	  return prefetchList;
+  }
+  
+  private boolean splitSent = false;
+  
+  private <T> T getSplitDetails(Path file, long offset) throws IOException {
+		   FileSystem fs = file.getFileSystem(getConfig());
+		   FSDataInputStream inFile = fs.open(file);
+		   inFile.seek(offset);
+		   String className = StringInterner.weakIntern(Text.readString(inFile));
+		   Class<T> cls;
+		   try {
+		     cls = (Class<T>) getConfig().getClassByName(className);
+		   } catch (ClassNotFoundException ce) {
+		     IOException wrap = new IOException("Split class " + className + 
+		                                         " not found");
+		     wrap.initCause(ce);
+		     throw wrap;
+		   }
+		   SerializationFactory factory = new SerializationFactory(getConfig());
+		   Deserializer<T> deserializer = 
+		     (Deserializer<T>) factory.getDeserializer(cls);
+		   deserializer.open(inFile);
+		   T split = deserializer.deserialize(null);
+		   inFile.close();
+		   return split;
+		 }
 
   protected AMResponse makeRemoteRequest() throws YarnRemoteException {
     AllocateRequest allocateRequest = BuilderUtils.newAllocateRequest(
         applicationAttemptId, lastResponseID, super.getApplicationProgress(),
         new ArrayList<ResourceRequest>(ask), new ArrayList<ContainerId>(
             release));
+    
+    if (!splitSent) {
+    		LOG.error("@@ AM->RM: make request");
+    		List<PrefetchInfo> prefetchList = getPrefetchSplits();
+    		if (prefetchList!=null){
+    			String s = PrefetchUtils.encode(prefetchList);
+    			LOG.error("@@ split: " + s);
+    			allocateRequest.setSplits(s);
+    			splitSent = true;
+        }
+    }
     AllocateResponse allocateResponse = scheduler.allocate(allocateRequest);
+    LOG.error("@@ AM<-RM: received split: " + allocateResponse.getSplits());
     AMResponse response = allocateResponse.getAMResponse();
     lastResponseID = response.getResponseId();
     availableResources = response.getAvailableResources();

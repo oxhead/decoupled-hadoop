@@ -31,6 +31,8 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -114,6 +116,8 @@ public class RawLocalFileSystem extends FileSystem {
       return result;
     }
   }
+  
+ 
 
   /*******************************************************
    * For open()'s FSInputStream.
@@ -209,9 +213,169 @@ public class RawLocalFileSystem extends FileSystem {
     if (!exists(f)) {
       throw new FileNotFoundException(f.toString());
     }
+    if (isPrefetchPath(f.toUri().getPath())) {
+    		LOG.error("@@ FS: open prefetch input stream=" + f);
+    		return new FSDataInputStream(new BufferedFSInputStream(new PrefetchedFileInputStream(f), bufferSize));
+    }
+    LOG.error("@@ FS: open local input stream=" + f);
     return new FSDataInputStream(new BufferedFSInputStream(
         new LocalFSFileInputStream(f), bufferSize));
   }
+  
+  private boolean isPrefetchPath(String path) {
+//	  return false;
+	  //return path.contains("nfs") && !path.contains("split") && !path.contains("crc") && !path.contains("staging")?true:false;
+	  return path.contains("nfs") && !path.contains("split") && !path.contains("crc") && !path.contains("staging") && (path.contains("bgwiki") || !path.contains("."))?true:false;
+  }
+  
+  class 
+  PrefetchedFileInputStream extends FSInputStream implements HasFileDescriptor {
+	    private FileInputStream fis;
+	    private long position;
+	    private Map<Integer, FileInputStream> fisRecords = new HashMap<Integer, FileInputStream>();
+	    private FileInputStream currentFis;
+	    private int currentBlockIndex;
+	    private int blockSize = 64*1024*1024;
+	    private File prefetchDir = new File("/dev/shm/hadoop");
+	    private Path f;
+
+	    public PrefetchedFileInputStream(Path f) throws IOException {
+	      this.fis = new TrackingFileInputStream(pathToFile(f));
+	      this.currentFis = fis;
+	      this.f = f;
+	      this.currentBlockIndex = -1;
+	      this.position = 0;
+	      switchPrefetchInputStream(0);
+	    }
+	    
+	    private boolean isPrefetchBlockReady(int blockIndex) {
+	    		return true;
+	    }
+	    
+	    private void switchPrefetchInputStream(long pos) throws FileNotFoundException  {
+	    		int blockIndex = (int) (pos/blockSize);
+	    		if (blockIndex != this.currentBlockIndex) {
+	    			File prefetchBlockFile = new File(prefetchDir, f.getName() + "." + blockSize + "."+(blockSize*blockIndex));
+	    			FileInputStream fis = new FileInputStream(prefetchBlockFile);
+	    			this.currentFis = fis;
+	    			this.currentBlockIndex = blockIndex;
+	    		}
+	    }
+	    
+	    private long getBlockBoundary(int blockIndex) {
+	    		return (blockIndex+1) * blockSize - 1;
+	    }
+	    
+	    private int readFromPrefetching(byte[] b, int off, int len) throws IOException {
+	    		int nRead = 0;
+	    		int value = 0;
+	    		while (nRead<len && value != -1) {
+	    			int remainging = len-nRead;
+	    			switchPrefetchInputStream(getPos());
+	    			long nextReadBoundary = getBlockBoundary(this.currentBlockIndex);
+	    			int readLen  = (int) (getPos() + remainging <= nextReadBoundary? remainging : (nextReadBoundary - getPos() + 1));
+	    			LOG.error("@@ FS: pread => pos=" + getPos() + ", block=" + this.currentBlockIndex + ", offset=" + off + ", len=" + len + ", remaining=" + remainging);
+	    			LOG.error("@@ FS: pread => boffset=" + (off + nRead) +  ", readLen=" + readLen + ", nextRead=" + (getPos() + readLen) + ", boundary=" + nextReadBoundary + ", remaining=" + this.currentFis.available());
+	    			value = this.currentFis.read(b, off + nRead, readLen);
+	    			LOG.error("@@ FS: pread => value=" + value);
+	    			if (value>=0) {
+	    				nRead += value;
+	    				skip(value);
+	    			} else {
+	    				break;
+	    			}
+	    			
+	    		}
+	    		return nRead;
+	    }
+	    
+	    private int readFromPrefetching(long position, byte[] b, int off, int len) throws IOException {
+	    		seek(position);
+	    		return readFromPrefetching(b, off, len);
+	    }
+	    
+	    @Override
+	    public void seek(long pos) throws IOException {
+	      fis.getChannel().position(pos);
+	      this.position = pos;
+	    }
+	    
+	    @Override
+	    public long getPos() throws IOException {
+	      return this.position;
+	    }
+	    
+	    @Override
+	    public boolean seekToNewSource(long targetPos) throws IOException {
+	      return false;
+	    }
+	    
+	    /*
+	     * Just forward to the fis
+	     */
+	    @Override
+	    public int available() throws IOException { return fis.available(); }
+	    @Override
+	    public void close() throws IOException { fis.close(); }
+	    @Override
+	    public boolean markSupported() { return false; }
+	    
+	    @Override
+	    public int read() throws IOException {
+	      try {
+	    	  	switchPrefetchInputStream(getPos());
+	        int value = this.currentFis.read();
+	        if (value >= 0) {
+	          this.position++;
+	        }
+	        return value;
+	      } catch (IOException e) {                 // unexpected exception
+	        throw new FSError(e);                   // assume native fs error
+	      }
+	    }
+	    
+	    @Override
+	    public int read(byte[] b, int off, int len) throws IOException {
+	      try {
+	    	  	int value = readFromPrefetching(b, off, len);
+	        if (value >= 0) {
+	          this.position += value;
+	        }
+	        return value;
+	      } catch (IOException e) {                 // unexpected exception
+	        throw new FSError(e);                   // assume native fs error
+	      }
+	    }
+	    
+	    @Override
+	    public int read(long position, byte[] b, int off, int len)
+	      throws IOException {
+	      try {
+	    	  		int value = readFromPrefetching(position, b, off, len);
+		        if (value >= 0) {
+		          this.position += value;
+		        }
+		        return value;
+	      } catch (IOException e) {
+	        throw new FSError(e);
+	      }
+	    }
+	    
+	    @Override
+	    public long skip(long n) throws IOException {
+	      long value = fis.skip(n);
+	      if (value > 0) {
+	        this.position += value;
+	      }
+	      return value;
+	    }
+
+	    @Override
+	    public FileDescriptor getFileDescriptor() throws IOException {
+	      return fis.getFD();
+	    }
+	  }
+	  
   
   /*********************************************************
    * For create()'s FSOutputStream.

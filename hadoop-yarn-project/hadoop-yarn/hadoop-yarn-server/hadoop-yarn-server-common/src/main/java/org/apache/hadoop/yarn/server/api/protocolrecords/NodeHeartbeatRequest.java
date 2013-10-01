@@ -28,4 +28,7 @@ public interface NodeHeartbeatRequest {
 
   MasterKey getLastKnownMasterKey();
   void setLastKnownMasterKey(MasterKey secretKey);
+  
+  String getSplits();
+  void setSplits(String splits);
 }

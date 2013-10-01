@@ -95,6 +95,18 @@ public class NodeHeartbeatResponsePBImpl extends ProtoBase<NodeHeartbeatResponse
       builder.clearHeartbeatResponse();
     this.heartbeatResponse = heartbeatResponse;
   }
+  
+  @Override
+  public String getSplits() {
+    NodeHeartbeatResponseProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getSplits();
+  }
+
+  @Override
+  public void setSplits(String splits) {
+    maybeInitBuilder();
+    builder.setSplits(splits);
+  }
 
   private HeartbeatResponsePBImpl convertFromProtoFormat(HeartbeatResponseProto p) {
     return new HeartbeatResponsePBImpl(p);
@@ -103,7 +115,4 @@ public class NodeHeartbeatResponsePBImpl extends ProtoBase<NodeHeartbeatResponse
   private HeartbeatResponseProto convertToProtoFormat(HeartbeatResponse t) {
     return ((HeartbeatResponsePBImpl)t).getProto();
   }
-
-
-
 }  

@@ -113,6 +113,7 @@ public class ResourceManager extends CompositeService implements Recoverable {
   private ClientRMService clientRM;
   protected ApplicationMasterService masterService;
   private ApplicationMasterLauncher applicationMasterLauncher;
+  private InMemoryManager inMemoryManager;
   private AdminService adminService;
   private ContainerAllocationExpirer containerAllocationExpirer;
   protected NMLivelinessMonitor nmLivelinessMonitor;
@@ -230,6 +231,12 @@ public class ResourceManager extends CompositeService implements Recoverable {
 
     masterService = createApplicationMasterService();
     addService(masterService) ;
+    
+    // Register InMemoryManager
+    this.inMemoryManager = new InMemoryManager(rmContext, masterService);
+    this.masterService.setInMemoryManager(this.inMemoryManager);
+    this.resourceTracker.setInMemoryManager(this.inMemoryManager);
+    addService(inMemoryManager);
 
     this.applicationACLsManager = new ApplicationACLsManager(conf);
 
@@ -647,6 +654,11 @@ public class ResourceManager extends CompositeService implements Recoverable {
     return new AdminService(this.conf, scheduler, rmContext,
         this.nodesListManager, clientRMService, applicationMasterService,
         resourceTrackerService);
+  }
+  
+  protected InMemoryManager createInMemoryManager(
+	  ApplicationMasterService masterService) {
+	  return new InMemoryManager(this.rmContext, this.masterService);
   }
 
   @Private

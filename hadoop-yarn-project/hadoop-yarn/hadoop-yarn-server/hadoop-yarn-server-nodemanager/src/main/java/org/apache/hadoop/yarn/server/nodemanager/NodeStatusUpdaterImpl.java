@@ -41,6 +41,7 @@ import org.apache.hadoop.yarn.api.records.ContainerState;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.NodeHealthStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.Dispatcher;
@@ -50,6 +51,7 @@ import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.server.api.ResourceTracker;
 import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatRequest;
+import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.protocolrecords.RegisterNodeManagerRequest;
 import org.apache.hadoop.yarn.server.api.records.HeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.records.MasterKey;
@@ -59,6 +61,7 @@ import org.apache.hadoop.yarn.server.api.records.RegistrationResponse;
 import org.apache.hadoop.yarn.server.nodemanager.containermanager.container.Container;
 import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
 import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.util.PrefetchUtils;
 
 public class NodeStatusUpdaterImpl extends AbstractService implements
     NodeStatusUpdater {
@@ -86,6 +89,7 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
   private Random keepAliveDelayRandom = new Random();
 
   private final NodeHealthCheckerService healthChecker;
+  private InMemoryService inMemoryService;
   private final NodeManagerMetrics metrics;
 
   public NodeStatusUpdaterImpl(Context context, Dispatcher dispatcher,
@@ -95,6 +99,15 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
     this.context = context;
     this.dispatcher = dispatcher;
     this.metrics = metrics;
+  }
+  
+  public void setInMemoryService(InMemoryService inMemoryService) {
+	  LOG.error("updater set InMemoryService: " + inMemoryService);
+	  this.inMemoryService = inMemoryService;
+  }
+  
+  public InMemoryService getInMemoryService() {
+	  return this.inMemoryService;
   }
 
   @Override
@@ -340,9 +353,14 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
               request.setLastKnownMasterKey(NodeStatusUpdaterImpl.this.context
                 .getContainerTokenSecretManager().getCurrentKey());
             }
-            HeartbeatResponse response =
-              resourceTracker.nodeHeartbeat(request).getHeartbeatResponse();
+            List<PrefetchInfo> prefetchList = getInMemoryService().getSplits();
+            String s = PrefetchUtils.encode(prefetchList);
+            LOG.error("@@ NM->RM: send prefetched splits -> " + s);
+            request.setSplits(s);
+            NodeHeartbeatResponse r = resourceTracker.nodeHeartbeat(request);
+            HeartbeatResponse response = r.getHeartbeatResponse();
 
+            inMemoryService.addPrefetchRequest(r.getSplits());
             // See if the master-key has rolled over
             if (isSecurityEnabled()) {
               MasterKey updatedMasterKey = response.getMasterKey();

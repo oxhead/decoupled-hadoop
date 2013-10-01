@@ -206,14 +206,25 @@ public class TeraSort extends Configured implements Tool {
     }
 
     public void setConf(Configuration conf) {
+      Path t = null;
       try {
         FileSystem fs = FileSystem.getLocal(conf);
         this.conf = conf;
-        Path partFile = new Path(TeraInputFormat.PARTITION_FILENAME);
+        //Path partFile = new Path(TeraInputFormat.PARTITION_FILENAME);
+	Path partFile = null;
+	String files = conf.get(MRJobConfig.CACHE_FILES);
+	if (files.contains("file:")) {
+	    String partition_path = files.substring(0, files.indexOf("#"));
+	    partFile = new Path(partition_path);
+	} else {
+            partFile = new Path(TeraInputFormat.PARTITION_FILENAME);
+	}
+	t = partFile;
         splitPoints = readPartitions(fs, partFile, conf);
         trie = buildTrie(splitPoints, 0, splitPoints.length, new Text(), 2);
       } catch (IOException ie) {
-        throw new IllegalArgumentException("can't read paritions file", ie);
+	String files = conf.get(MRJobConfig.CACHE_FILES);
+        throw new IllegalArgumentException("can't read paritions file: " + t.toUri() + " -> " + files, ie);
       }
     }
 
@@ -299,6 +310,8 @@ public class TeraSort extends Configured implements Tool {
                                     TeraInputFormat.PARTITION_FILENAME);
       URI partitionUri = new URI(partitionFile.toString() +
                                  "#" + TeraInputFormat.PARTITION_FILENAME);
+      LOG.error("# output dir: " + outputDir);
+      LOG.error("@ partition uri: " + partitionUri);
       try {
         TeraInputFormat.writePartitionFile(job, partitionFile);
       } catch (Throwable e) {

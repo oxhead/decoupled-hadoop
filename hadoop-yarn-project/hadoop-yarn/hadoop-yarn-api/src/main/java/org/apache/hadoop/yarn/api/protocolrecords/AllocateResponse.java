@@ -74,4 +74,12 @@ public interface AllocateResponse {
   @Private
   @Unstable
   public void setNumClusterNodes(int numNodes);
+  
+  @Public
+  @Unstable
+  public abstract String getSplits();
+
+  @Public
+  @Unstable
+  public abstract void setSplits(String splits);
 }

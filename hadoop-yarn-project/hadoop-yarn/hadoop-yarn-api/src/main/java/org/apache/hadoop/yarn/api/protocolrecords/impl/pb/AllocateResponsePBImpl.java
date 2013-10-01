@@ -108,6 +108,18 @@ public class AllocateResponsePBImpl extends ProtoBase<AllocateResponseProto>
     maybeInitBuilder();
     builder.setNumClusterNodes(numNodes);
   }
+  
+  @Override
+  public String getSplits() {
+	AllocateResponseProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getSplits();
+  }
+
+  @Override
+  public void setSplits(String splits) {
+    maybeInitBuilder();
+    builder.setSplits(splits);
+  }
 
   
   private AMResponsePBImpl convertFromProtoFormat(AMResponseProto p) {

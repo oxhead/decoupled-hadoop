@@ -194,6 +194,7 @@ message NodeReportProto {
   optional int32 numContainers = 6;
   optional NodeHealthStatusProto node_health_status = 8;
   optional NodeStateProto node_state = 9;
+  optional string splits = 10;
 }
 
 

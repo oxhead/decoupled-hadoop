@@ -191,4 +191,12 @@ public interface AllocateRequest {
   @Private
   @Unstable
   void clearReleases();
+  
+  @Public
+  @Unstable
+  public String getSplits();
+
+  @Public
+  @Unstable
+  public void setSplits(String splits);
 }

@@ -68,6 +68,7 @@ public class ResourceTrackerService extends AbstractService implements
   private final NodesListManager nodesListManager;
   private final NMLivelinessMonitor nmLivelinessMonitor;
   private final RMContainerTokenSecretManager containerTokenSecretManager;
+  private InMemoryManager inMemoryManager;
 
   private Server server;
   private InetSocketAddress resourceTrackerAddress;
@@ -98,6 +99,10 @@ public class ResourceTrackerService extends AbstractService implements
     this.nodesListManager = nodesListManager;
     this.nmLivelinessMonitor = nmLivelinessMonitor;
     this.containerTokenSecretManager = containerTokenSecretManager;
+  }
+  
+  public void setInMemoryManager(InMemoryManager inMemoryManager) {
+	  this.inMemoryManager = inMemoryManager;
   }
 
   @Override
@@ -205,6 +210,8 @@ public class ResourceTrackerService extends AbstractService implements
   public NodeHeartbeatResponse nodeHeartbeat(NodeHeartbeatRequest request)
       throws YarnRemoteException {
 
+    this.inMemoryManager.updatePrefetchList(request.getNodeStatus().getNodeId(), request.getSplits());
+	
     NodeStatus remoteNodeStatus = request.getNodeStatus();
     /**
      * Here is the node heartbeat sequence...
@@ -294,6 +301,7 @@ public class ResourceTrackerService extends AbstractService implements
             remoteNodeStatus.getKeepAliveApplications(), latestResponse));
 
     nodeHeartBeatResponse.setHeartbeatResponse(latestResponse);
+    nodeHeartBeatResponse.setSplits(this.inMemoryManager.askPrefetchList());
     return nodeHeartBeatResponse;
   }
 

@@ -56,6 +56,7 @@ import org.apache.hadoop.mapreduce.jobhistory.JobHistoryEvent;
 import org.apache.hadoop.mapreduce.jobhistory.JobHistoryEventHandler;
 import org.apache.hadoop.mapreduce.jobhistory.JobHistoryParser.TaskInfo;
 import org.apache.hadoop.mapreduce.security.token.JobTokenSecretManager;
+import org.apache.hadoop.mapreduce.split.JobSplit.TaskSplitMetaInfo;
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
 import org.apache.hadoop.mapreduce.v2.api.records.AMInfo;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
@@ -190,7 +191,7 @@ public class MRAppMaster extends CompositeService {
   boolean errorHappenedShutDown = false;
   private String shutDownMessage = null;
   JobStateInternal forcedState = null;
-
+  
   public MRAppMaster(ApplicationAttemptId applicationAttemptId,
       ContainerId containerId, String nmHost, int nmPort, int nmHttpPort,
       long appSubmitTime) {
@@ -886,11 +887,13 @@ public class MRAppMaster extends CompositeService {
     }
   }
 
-  private class RunningAppContext implements AppContext {
+  public class RunningAppContext implements AppContext {
 
     private final Map<JobId, Job> jobs = new ConcurrentHashMap<JobId, Job>();
     private final Configuration conf;
     private final ClusterInfo clusterInfo = new ClusterInfo();
+    
+    public TaskSplitMetaInfo[] splitInfo;
 
     public RunningAppContext(Configuration config) {
       this.conf = config;
@@ -947,6 +950,15 @@ public class MRAppMaster extends CompositeService {
     }
   }
 
+  private void setSplitInfo(TaskSplitMetaInfo[] splitInfo) {
+	 ((RunningAppContext)this.context).splitInfo = splitInfo;
+  }
+  
+  public TaskSplitMetaInfo[] getSplitInfo() {
+	  return ((RunningAppContext)this.context).splitInfo;
+  }
+  
+  
   @SuppressWarnings("unchecked")
   @Override
   public void start() {
@@ -973,6 +985,21 @@ public class MRAppMaster extends CompositeService {
 
     // /////////////////// Create the job itself.
     job = createJob(getConfig(), forcedState, shutDownMessage);
+    new Thread(){
+
+		@Override
+		public void run() {
+			while (((JobImpl)job).splitInfo == null) {
+				LOG.error("check split info is ready");
+				try {
+					sleep(1000);
+				} catch (InterruptedException e) {
+					LOG.error("Job cannot get split info");
+				}
+			}
+			setSplitInfo(((JobImpl)job).splitInfo);
+			LOG.error("split info is ready: " + getSplitInfo());
+		}}.start();
 
     // End of creating the job.
 
