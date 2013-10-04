@@ -745,6 +745,10 @@ public abstract class TaskImpl implements Task, EventHandler<TaskEvent> {
   protected String getSplitsAsString(){
 	  return "";
   }
+  
+  public String getSplits() {
+	  return getSplitsAsString();
+  }
 
   private static class InitialScheduleTransition
     implements SingleArcTransition<TaskImpl, TaskEvent> {

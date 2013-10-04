@@ -37,6 +37,7 @@ public class NodeHeartbeatRequestPBImpl extends
   
   private NodeStatus nodeStatus = null;
   private MasterKey lastKnownMasterKey = null;
+  private String splits = null;
   
   public NodeHeartbeatRequestPBImpl() {
     builder = NodeHeartbeatRequestProto.newBuilder();
@@ -112,6 +113,18 @@ public class NodeHeartbeatRequestPBImpl extends
     }
     this.lastKnownMasterKey = convertFromProtoFormat(p.getLastKnownMasterKey());
     return this.lastKnownMasterKey;
+  }
+  
+  @Override
+  public String getSplits() {
+    NodeHeartbeatRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getSplits();
+  }
+
+  @Override
+  public void setSplits(String splits) {
+    maybeInitBuilder();
+    builder.setSplits(splits);
   }
 
   @Override

@@ -308,6 +308,18 @@ public class AllocateRequestPBImpl extends ProtoBase<AllocateRequestProto> imple
     initReleases();
     this.release.clear();
   }
+  
+  @Override
+  public String getSplits() {
+    AllocateRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getSplits();
+  }
+
+  @Override
+  public void setSplits(String splits) {
+    maybeInitBuilder();
+    builder.setSplits(splits);
+  }
 
   private ApplicationAttemptIdPBImpl convertFromProtoFormat(ApplicationAttemptIdProto p) {
     return new ApplicationAttemptIdPBImpl(p);

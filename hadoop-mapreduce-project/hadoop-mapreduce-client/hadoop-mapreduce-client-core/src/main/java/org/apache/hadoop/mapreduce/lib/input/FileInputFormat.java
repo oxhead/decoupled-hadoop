@@ -276,6 +276,11 @@ public abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
         if (isSplitable(job, path)) {
           long blockSize = file.getBlockSize();
           long splitSize = computeSplitSize(blockSize, minSize, maxSize);
+	  LOG.info("@@ " + path + " -> block: " +  blockSize + ", split: " + splitSize);
+		for (BlockLocation bl: blkLocations) {
+			LOG.info("## location: " + bl);
+		}
+		
 
           long bytesRemaining = length;
           while (((double) bytesRemaining)/splitSize > SPLIT_SLOP) {

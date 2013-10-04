@@ -237,11 +237,16 @@ public class ApplicationMasterService extends AbstractService implements
       return response;
     }
   }
-
+  
   @Override
   public AllocateResponse allocate(AllocateRequest request)
       throws YarnRemoteException {
 
+	  if (request.getSplits() != null) {
+		  LOG.error("@@ RM<-AM: receive splits for application" + request.getApplicationAttemptId().getApplicationId());
+		  inMemoryManager.updateSplitHint(request.getApplicationAttemptId().getApplicationId(), request.getSplits());
+	  }
+	  
     ApplicationAttemptId appAttemptId = request.getApplicationAttemptId();
     authorizeRequest(appAttemptId);
 
@@ -333,6 +338,9 @@ public class ApplicationMasterService extends AbstractService implements
       
       allocateResponse.setAMResponse(response);
       allocateResponse.setNumClusterNodes(this.rScheduler.getNumClusterNodes());
+      String s = getInMemoryManager().getPrefetchSplits(appAttemptId.getApplicationId());
+      allocateResponse.setSplits(s);
+      LOG.error("^^ RMAM: send splits: " + s);
       return allocateResponse;
     }
   }
@@ -359,5 +367,13 @@ public class ApplicationMasterService extends AbstractService implements
       this.server.stop();
     }
     super.stop();
+  }
+  
+  private InMemoryManager inMemoryManager;
+  public void setInMemoryManager(InMemoryManager inMemoryManager) {
+	  this.inMemoryManager = inMemoryManager;
+  }
+  public InMemoryManager getInMemoryManager() {
+	  return inMemoryManager;
   }
 }

@@ -75,6 +75,7 @@ public class NodeManager extends CompositeService
   protected final NodeManagerMetrics metrics = NodeManagerMetrics.create();
   private ApplicationACLsManager aclsManager;
   private NodeHealthCheckerService nodeHealthChecker;
+  private InMemoryService inMemorySerrvice;
   private LocalDirsHandlerService dirsHandler;
   private Context context;
   private AsyncDispatcher dispatcher;
@@ -88,6 +89,11 @@ public class NodeManager extends CompositeService
   public NodeManager() {
     super(NodeManager.class.getName());
   }
+  
+  protected InMemoryService createInMemoryService(Context context,
+	      Dispatcher dispatcher, NodeStatusUpdater statusUpdater) {
+	    return new InMemoryService(context);
+	  }
 
   protected NodeStatusUpdater createNodeStatusUpdater(Context context,
       Dispatcher dispatcher, NodeHealthCheckerService healthChecker) {
@@ -152,9 +158,14 @@ public class NodeManager extends CompositeService
     nodeHealthChecker = new NodeHealthCheckerService();
     addService(nodeHealthChecker);
     dirsHandler = nodeHealthChecker.getDiskHandler();
-
+    
     NodeStatusUpdater nodeStatusUpdater =
         createNodeStatusUpdater(context, dispatcher, nodeHealthChecker);
+    
+    this.inMemorySerrvice = createInMemoryService(context, dispatcher, nodeStatusUpdater);
+    addService(this.inMemorySerrvice);
+    ((NodeStatusUpdaterImpl)nodeStatusUpdater).setInMemoryService(this.inMemorySerrvice);
+    //TODO: add dispatcher
 
     NodeResourceMonitor nodeResourceMonitor = createNodeResourceMonitor();
     addService(nodeResourceMonitor);

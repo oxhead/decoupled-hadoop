@@ -108,6 +108,7 @@ public class JobSubmissionFiles {
     if (fs.exists(stagingArea)) {
       FileStatus fsStatus = fs.getFileStatus(stagingArea);
       String owner = fsStatus.getOwner();
+      /**
       if (!(owner.equals(currentUser) || owner.equals(realUser))) {
          throw new IOException("The ownership on the staging directory " +
                       stagingArea + " is not as expected. " +
@@ -121,6 +122,7 @@ public class JobSubmissionFiles {
           "to correct value " + JOB_DIR_PERMISSION);
         fs.setPermission(stagingArea, JOB_DIR_PERMISSION);
       }
+      */
     } else {
       fs.mkdirs(stagingArea, 
           new FsPermission(JOB_DIR_PERMISSION));

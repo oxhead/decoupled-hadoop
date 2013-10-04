@@ -21,6 +21,8 @@ package org.apache.hadoop.mapreduce.split;
 import java.io.IOException;
 import java.util.Arrays;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -65,11 +67,16 @@ public class SplitMetaInfoReader {
       throw new IOException("Unsupported split version " + vers);
     }
     int numSplits = WritableUtils.readVInt(in); //TODO: check for insane values
+    LOG.error("^^ AM: read split meta=" + metaSplitFile);
+    LOG.error("^^ AM: num of splits=" + numSplits);
     JobSplit.TaskSplitMetaInfo[] allSplitMetaInfo = 
       new JobSplit.TaskSplitMetaInfo[numSplits];
     for (int i = 0; i < numSplits; i++) {
       JobSplit.SplitMetaInfo splitMetaInfo = new JobSplit.SplitMetaInfo();
       splitMetaInfo.readFields(in);
+      for (String s : splitMetaInfo.getLocations()) {
+    	  	LOG.error("^^ AM: split=" + i +", location=" + s);
+      }
       JobSplit.TaskSplitIndex splitIndex = new JobSplit.TaskSplitIndex(
           jobSplitFile, 
           splitMetaInfo.getStartOffset());
@@ -80,5 +87,5 @@ public class SplitMetaInfoReader {
     in.close();
     return allSplitMetaInfo;
   }
-
+  private static final Log LOG = LogFactory.getLog(SplitMetaInfoReader.class);
 }

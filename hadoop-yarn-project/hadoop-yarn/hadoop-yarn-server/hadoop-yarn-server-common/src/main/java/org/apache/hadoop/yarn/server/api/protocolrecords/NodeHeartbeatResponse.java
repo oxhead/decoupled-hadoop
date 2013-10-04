@@ -24,4 +24,7 @@ public interface NodeHeartbeatResponse {
   public abstract HeartbeatResponse getHeartbeatResponse();
   
   public abstract void setHeartbeatResponse(HeartbeatResponse heartbeatResponse);
+  
+  public abstract String getSplits();
+  public abstract void setSplits(String splits);
 }

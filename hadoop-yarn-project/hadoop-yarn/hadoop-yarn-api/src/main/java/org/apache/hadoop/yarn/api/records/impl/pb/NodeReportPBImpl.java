@@ -205,7 +205,7 @@ public class NodeReportPBImpl extends ProtoBase<NodeReportProto>
       builder.clearUsed();
     this.used = used;
   }
-
+  
   @Override
   public NodeReportProto getProto() {
     mergeLocalToProto();
