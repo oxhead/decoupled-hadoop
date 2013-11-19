@@ -75,7 +75,6 @@ public class NodeManager extends CompositeService
   protected final NodeManagerMetrics metrics = NodeManagerMetrics.create();
   private ApplicationACLsManager aclsManager;
   private NodeHealthCheckerService nodeHealthChecker;
-  private InMemoryService inMemorySerrvice;
   private LocalDirsHandlerService dirsHandler;
   private Context context;
   private AsyncDispatcher dispatcher;
@@ -86,13 +85,16 @@ public class NodeManager extends CompositeService
   
   private AtomicBoolean isStopping = new AtomicBoolean(false);
   
+  private InMemoryService inMemorySerrvice;
+  private boolean isPrefetchEnable;
+  
   public NodeManager() {
     super(NodeManager.class.getName());
   }
   
   protected InMemoryService createInMemoryService(Context context,
-	      Dispatcher dispatcher, NodeStatusUpdater statusUpdater) {
-	    return new InMemoryService(context);
+	      Dispatcher dispatcher, NodeStatusUpdater statusUpdater, int prefetchWindow, int concurrency, boolean transfer) {
+	    return new InMemoryService(context, prefetchWindow, concurrency, transfer);
 	  }
 
   protected NodeStatusUpdater createNodeStatusUpdater(Context context,
@@ -162,11 +164,6 @@ public class NodeManager extends CompositeService
     NodeStatusUpdater nodeStatusUpdater =
         createNodeStatusUpdater(context, dispatcher, nodeHealthChecker);
     
-    this.inMemorySerrvice = createInMemoryService(context, dispatcher, nodeStatusUpdater);
-    addService(this.inMemorySerrvice);
-    ((NodeStatusUpdaterImpl)nodeStatusUpdater).setInMemoryService(this.inMemorySerrvice);
-    //TODO: add dispatcher
-
     NodeResourceMonitor nodeResourceMonitor = createNodeResourceMonitor();
     addService(nodeResourceMonitor);
 
@@ -195,6 +192,29 @@ public class NodeManager extends CompositeService
         conf.getLong(YarnConfiguration.NM_PROCESS_KILL_WAIT_MS,
             YarnConfiguration.DEFAULT_NM_PROCESS_KILL_WAIT_MS) +
         SHUTDOWN_CLEANUP_SLOP_MS;
+    
+    isPrefetchEnable = 
+    		conf.getBoolean(YarnConfiguration.IM_ENABLED,
+    				YarnConfiguration.DEFAULT_IM_ENABLED);
+    LOG.error("@_@ NM: prefetch enabled=" + isPrefetchEnable + "->" + YarnConfiguration.IM_ENABLED);
+    
+    // InMemory service
+    if (isPrefetchEnable) {
+    		int prefetchWindow = 
+    			conf.getInt(YarnConfiguration.IM_PREFETCH_WINDOW,
+    				YarnConfiguration.DEFAULT_IM_PREFETCH_WINDOW);
+    		int concurrency = 
+    			conf.getInt(YarnConfiguration.IM_PREFETCH_CONCURRENCY,
+    	    			YarnConfiguration.DEFAULT_IM_PREFETCH_CONCURRENCY);
+    		boolean transfer = 
+        			conf.getBoolean(YarnConfiguration.IM_PREFETCH_TRANSFER,
+        	    			YarnConfiguration.DEFAULT_IM_PREFETCH_TRANSFER);
+    		LOG.error("@@ NM: prefetching window=" + prefetchWindow + ", concurrency=" + concurrency + ", transfer=" + transfer);
+    		this.inMemorySerrvice = createInMemoryService(context, dispatcher, nodeStatusUpdater, prefetchWindow, concurrency, transfer);
+    		addService(this.inMemorySerrvice);
+    		((NodeStatusUpdaterImpl)nodeStatusUpdater).setInMemoryService(this.inMemorySerrvice);
+    		((ContainerManagerImpl)containerManager).setInMemoryService(this.inMemorySerrvice);
+    }
     
     super.init(conf);
     // TODO add local dirs to del

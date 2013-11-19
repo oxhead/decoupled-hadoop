@@ -30,6 +30,8 @@ import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
 
+import com.google.protobuf.ByteString;
+
 /**
  * <p>The core request sent by the <code>ApplicationMaster</code> to the 
  * <code>ResourceManager</code> to obtain resources in the cluster.</p> 
@@ -194,9 +196,25 @@ public interface AllocateRequest {
   
   @Public
   @Unstable
-  public String getSplits();
+  public ByteString getPrefetchRequest();
 
   @Public
   @Unstable
-  public void setSplits(String splits);
+  public void setPrefetchRequest(ByteString splits);
+  
+  @Public
+  @Unstable
+  public ByteString getCompletedPrefetchTasks();
+
+  @Public
+  @Unstable
+  public void setCompletedPrefetchTasks(ByteString splits);
+  
+  @Public
+  @Unstable
+  public ByteString getFailedPrefetchTasks();
+
+  @Public
+  @Unstable
+  public void setFailedPrefetchTasks(ByteString splits);
 }

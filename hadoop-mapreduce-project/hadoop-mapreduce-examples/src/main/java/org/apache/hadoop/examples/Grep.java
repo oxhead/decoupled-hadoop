@@ -89,7 +89,7 @@ public class Grep extends Configured implements Tool {
       sortJob.setSortComparatorClass(          // sort by decreasing freq
         LongWritable.DecreasingComparator.class);
 
-      sortJob.waitForCompletion(true);
+      //sortJob.waitForCompletion(true);
     }
     finally {
       FileSystem.get(conf).delete(tempDir, true);

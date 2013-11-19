@@ -1,14 +1,20 @@
 package org.apache.hadoop.yarn.api.records;
 
-public class PrefetchInfo {
+import java.io.Serializable;
 
+public class PrefetchInfo implements Serializable {
+
+	private static final long serialVersionUID = 1L;
+	
 	public String meta = null;
-	public String metaOffset = null;
+	public Integer metaOffset = null;
 	public String file = null;
-	public String fileOffset = null;
-	public String fileLength = null;
-	public String node = null;
-	public String progress = null;
+	public Integer fileOffset = null;
+	public Integer fileLength = null;
+	public String nodeId = null;
+	public Integer progress = null;
+	public String taskId = null;
+	public String containerId = null;
 
 	@Override
 	public int hashCode() {
@@ -61,8 +67,9 @@ public class PrefetchInfo {
 
 	@Override
 	public String toString() {
-		return "PrefetchInfo [meta=" + meta + ", metaOffset=" + metaOffset + ", file=" + file + ", fileOffset=" + fileOffset + ", fileLength=" + fileLength + ", node=" + node + ", progress="
-				+ progress + "]";
+		return "PrefetchInfo [meta=" + meta + ", metaOffset=" + metaOffset + ", file=" + file + ", fileOffset=" + fileOffset + ", fileLength=" + fileLength + ", nodeId=" + nodeId + ", progress="
+				+ progress + ", taskId=" + taskId + "]";
 	}
+
 
 }

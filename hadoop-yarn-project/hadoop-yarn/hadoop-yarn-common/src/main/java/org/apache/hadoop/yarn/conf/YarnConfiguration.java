@@ -83,6 +83,28 @@ public class YarnConfiguration extends Configuration {
     "org.apache.hadoop.yarn.ipc.HadoopYarnProtoRPC";
   
   ////////////////////////////////
+  // InMemory Configs
+  ////////////////////////////////
+  
+  public static final String IM_PREFIX = "yarn.inmemory.";
+  
+  public static final String IM_ENABLED = IM_PREFIX + "enabled";
+  public static final boolean DEFAULT_IM_ENABLED = false;
+  public static final String IM_PREFETCH_WINDOW = IM_PREFIX + "prefetch.window";
+  public static final int DEFAULT_IM_PREFETCH_WINDOW = 8;
+  public static final String IM_PREFETCH_CONCURRENCY = IM_PREFIX + "prefetch.concurrency";
+  public static final int DEFAULT_IM_PREFETCH_CONCURRENCY = 8;
+  public static final String IM_PREFETCH_TRANSFER = IM_PREFIX + "prefetch.transfer";
+  public static final boolean DEFAULT_IM_PREFETCH_TRANSFER = true;
+  public static final String IM_TOKEN_NUMBER = IM_PREFIX + "token.number";
+  public static final int DEFAULT_IM_TOKEN_NUMBER = 100;
+  public static final String IM_TOKEN_SIZE = IM_PREFIX + "token.size";
+  public static final int DEFAULT_IM_TOKEN_SIZE = 1*1024*1024;
+  public static final String IM_TOKEN_INTERVAL = IM_PREFIX + "token.interval";
+  public static final long DEFAULT_IM_TOKEN_INTERVAL = 100;
+
+  
+  ////////////////////////////////
   // Resource Manager Configs
   ////////////////////////////////
   public static final String RM_PREFIX = "yarn.resourcemanager.";

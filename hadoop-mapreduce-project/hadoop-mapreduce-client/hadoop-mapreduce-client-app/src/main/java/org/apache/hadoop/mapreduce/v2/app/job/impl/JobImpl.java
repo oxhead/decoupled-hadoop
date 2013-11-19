@@ -1429,7 +1429,7 @@ public class JobImpl implements org.apache.hadoop.mapreduce.v2.app.job.Job,
     public void transition(JobImpl job, JobEvent event) {
     		LOG.error("@@ AM: start to delay the job execution");
     		try{
-    		Thread.sleep(60*1000);
+    		//Thread.sleep(60*1000);
     		} catch (Exception e) {
     			LOG.debug("@@ AM: sleep with exception="+e);
     		}

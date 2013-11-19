@@ -54,4 +54,3 @@ message HeartbeatResponseProto {
   repeated ContainerIdProto containers_to_cleanup = 4;
   repeated ApplicationIdProto applications_to_cleanup = 5;
 }
-

@@ -27,6 +27,8 @@ import org.apache.hadoop.yarn.server.api.protocolrecords.NodeHeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.records.HeartbeatResponse;
 import org.apache.hadoop.yarn.server.api.records.impl.pb.HeartbeatResponsePBImpl;
 
+import com.google.protobuf.ByteString;
+
 
     
 public class NodeHeartbeatResponsePBImpl extends ProtoBase<NodeHeartbeatResponseProto> implements NodeHeartbeatResponse {
@@ -97,16 +99,30 @@ public class NodeHeartbeatResponsePBImpl extends ProtoBase<NodeHeartbeatResponse
   }
   
   @Override
-  public String getSplits() {
+  public ByteString getPrefetchingSplits() {
     NodeHeartbeatResponseProtoOrBuilder p = viaProto ? proto : builder;
-    return p.getSplits();
+    return p.getPrefetchingSplits();
   }
 
   @Override
-  public void setSplits(String splits) {
+  public void setPrefetchingSplits(ByteString splits) {
     maybeInitBuilder();
-    builder.setSplits(splits);
+    builder.setPrefetchingSplits(splits);
   }
+  
+  @Override
+  public ByteString getCompletedSplits() {
+    NodeHeartbeatResponseProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getCompletedSplits();
+  }
+
+  @Override
+  public void setCompletedSplits(ByteString splits) {
+    maybeInitBuilder();
+    builder.setCompletedSplits(splits);
+  }
+  
+  
 
   private HeartbeatResponsePBImpl convertFromProtoFormat(HeartbeatResponseProto p) {
     return new HeartbeatResponsePBImpl(p);

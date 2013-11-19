@@ -21,6 +21,8 @@ package org.apache.hadoop.yarn.server.resourcemanager;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -46,6 +48,7 @@ import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.NodeReport;
+import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -65,9 +68,13 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.event.RMAppAt
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.Allocation;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNodeReport;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.im.InMemoryScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.security.authorize.RMPolicyProvider;
 import org.apache.hadoop.yarn.service.AbstractService;
 import org.apache.hadoop.yarn.util.BuilderUtils;
+import org.apache.hadoop.yarn.util.PrefetchUtils;
+
+import com.google.protobuf.ByteString;
 
 @SuppressWarnings("unchecked")
 @Private
@@ -83,6 +90,8 @@ public class ApplicationMasterService extends AbstractService implements
       new ConcurrentHashMap<ApplicationAttemptId, AMResponse>();
   private final AMResponse reboot = recordFactory.newRecordInstance(AMResponse.class);
   private final RMContext rmContext;
+  
+  private boolean isPrefetchEnabled;
 
   public ApplicationMasterService(RMContext rmContext, YarnScheduler scheduler) {
     super(ApplicationMasterService.class.getName());
@@ -120,6 +129,11 @@ public class ApplicationMasterService extends AbstractService implements
     this.bindAddress =
         conf.updateConnectAddr(YarnConfiguration.RM_SCHEDULER_ADDRESS,
                                server.getListenerAddress());
+    
+    this.isPrefetchEnabled =
+    		conf.getBoolean(YarnConfiguration.IM_ENABLED, YarnConfiguration.DEFAULT_IM_ENABLED);
+    LOG.error("@@ AMS: prefetching enabled=" + this.isPrefetchEnabled);
+    
     super.start();
   }
 
@@ -242,9 +256,18 @@ public class ApplicationMasterService extends AbstractService implements
   public AllocateResponse allocate(AllocateRequest request)
       throws YarnRemoteException {
 
-	  if (request.getSplits() != null) {
-		  LOG.error("@@ RM<-AM: receive splits for application" + request.getApplicationAttemptId().getApplicationId());
-		  inMemoryManager.updateSplitHint(request.getApplicationAttemptId().getApplicationId(), request.getSplits());
+	  if (this.isPrefetchEnabled) {
+		  List<PrefetchInfo> prefetchRequests = PrefetchUtils.serializedDecode(request.getPrefetchRequest());
+		  LOG.error("@@ AMS: receive split request -> application=" + request.getApplicationAttemptId().getApplicationId() + ", size=" + prefetchRequests.size());
+		  ((InMemoryScheduler)this.rScheduler).addPrefetchRequest(request.getApplicationAttemptId(), prefetchRequests);
+		  
+		  List<PrefetchInfo> completedPrefetchTasks = PrefetchUtils.serializedDecode(request.getCompletedPrefetchTasks());
+		  LOG.error("@@ AMS: receive completed split -> size=" + completedPrefetchTasks.size());
+		  ((InMemoryScheduler)this.rScheduler).reportCompletedPrefetchTask(request.getApplicationAttemptId(), completedPrefetchTasks);
+		  
+		  List<PrefetchInfo> failedPrefetchTasks = PrefetchUtils.serializedDecode(request.getFailedPrefetchTasks());
+		  LOG.error("@@ AMS: receive failed split -> size=" + failedPrefetchTasks.size());
+		  ((InMemoryScheduler)this.rScheduler).reportFailedPrefetchTask(request.getApplicationAttemptId(), failedPrefetchTasks);
 	  }
 	  
     ApplicationAttemptId appAttemptId = request.getApplicationAttemptId();
@@ -338,9 +361,13 @@ public class ApplicationMasterService extends AbstractService implements
       
       allocateResponse.setAMResponse(response);
       allocateResponse.setNumClusterNodes(this.rScheduler.getNumClusterNodes());
-      String s = getInMemoryManager().getPrefetchSplits(appAttemptId.getApplicationId());
-      allocateResponse.setSplits(s);
-      LOG.error("^^ RMAM: send splits: " + s);
+      
+      // TODO: piggy back the prefetching infor
+      if (isPrefetchEnabled) {
+    	  	List<PrefetchInfo> prefetchList= ((InMemoryScheduler)this.rScheduler).getAssignedPrefetchSplits(appAttemptId.getApplicationId());
+    	  	allocateResponse.setAssignedSplits(PrefetchUtils.serializedEncode(prefetchList));
+    	  	LOG.error("@@ AMS: assigned splits");
+      }
       return allocateResponse;
     }
   }
@@ -369,11 +396,4 @@ public class ApplicationMasterService extends AbstractService implements
     super.stop();
   }
   
-  private InMemoryManager inMemoryManager;
-  public void setInMemoryManager(InMemoryManager inMemoryManager) {
-	  this.inMemoryManager = inMemoryManager;
-  }
-  public InMemoryManager getInMemoryManager() {
-	  return inMemoryManager;
-  }
 }

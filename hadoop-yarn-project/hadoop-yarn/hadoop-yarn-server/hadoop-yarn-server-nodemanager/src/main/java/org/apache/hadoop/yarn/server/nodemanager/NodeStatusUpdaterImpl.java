@@ -19,6 +19,7 @@
 package org.apache.hadoop.yarn.server.nodemanager;
 
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -63,6 +64,8 @@ import org.apache.hadoop.yarn.server.nodemanager.metrics.NodeManagerMetrics;
 import org.apache.hadoop.yarn.service.AbstractService;
 import org.apache.hadoop.yarn.util.PrefetchUtils;
 
+import com.google.protobuf.ByteString;
+
 public class NodeStatusUpdaterImpl extends AbstractService implements
     NodeStatusUpdater {
 
@@ -91,6 +94,8 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
   private final NodeHealthCheckerService healthChecker;
   private InMemoryService inMemoryService;
   private final NodeManagerMetrics metrics;
+  
+  private boolean isPrefetchEnabled;
 
   public NodeStatusUpdaterImpl(Context context, Dispatcher dispatcher,
       NodeHealthCheckerService healthChecker, NodeManagerMetrics metrics) {
@@ -104,6 +109,7 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
   public void setInMemoryService(InMemoryService inMemoryService) {
 	  LOG.error("updater set InMemoryService: " + inMemoryService);
 	  this.inMemoryService = inMemoryService;
+	  this.isPrefetchEnabled = true;
   }
   
   public InMemoryService getInMemoryService() {
@@ -353,14 +359,27 @@ public class NodeStatusUpdaterImpl extends AbstractService implements
               request.setLastKnownMasterKey(NodeStatusUpdaterImpl.this.context
                 .getContainerTokenSecretManager().getCurrentKey());
             }
-            List<PrefetchInfo> prefetchList = getInMemoryService().getSplits();
-            String s = PrefetchUtils.encode(prefetchList);
-            LOG.error("@@ NM->RM: send prefetched splits -> " + s);
-            request.setSplits(s);
+            
+            if (isPrefetchEnabled) {
+            		List<PrefetchInfo> prefetchList = getInMemoryService().getPrefetchProgress();
+            		ByteString s = PrefetchUtils.serializedEncode(prefetchList);
+                LOG.error("@@ NM->RM: send prefetched splits -> " + prefetchList.size());
+                request.setPrefetchProgress(s);
+                int availableWindow = getInMemoryService().getAvailableWindow();
+                LOG.error("@@ NM->RM: update available window=" + availableWindow);
+                request.setAvailableWindow(availableWindow);
+            }
+            
             NodeHeartbeatResponse r = resourceTracker.nodeHeartbeat(request);
             HeartbeatResponse response = r.getHeartbeatResponse();
-
-            inMemoryService.addPrefetchRequest(r.getSplits());
+            
+            if (isPrefetchEnabled) {
+            		List<PrefetchInfo> prefetchList = PrefetchUtils.serializedDecode(r.getPrefetchingSplits());
+            		inMemoryService.addPrefetchRequestToQueue(prefetchList);
+            		List<PrefetchInfo> completedList = PrefetchUtils.serializedDecode(r.getCompletedSplits());
+            		inMemoryService.revokePrefetchTasks(completedList);
+            }
+            
             // See if the master-key has rolled over
             if (isSecurityEnabled()) {
               MasterKey updatedMasterKey = response.getMasterKey();

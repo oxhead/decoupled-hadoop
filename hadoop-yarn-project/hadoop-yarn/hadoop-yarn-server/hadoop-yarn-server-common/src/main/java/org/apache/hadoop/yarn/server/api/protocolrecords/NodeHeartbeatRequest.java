@@ -21,6 +21,8 @@ package org.apache.hadoop.yarn.server.api.protocolrecords;
 import org.apache.hadoop.yarn.server.api.records.MasterKey;
 import org.apache.hadoop.yarn.server.api.records.NodeStatus;
 
+import com.google.protobuf.ByteString;
+
 public interface NodeHeartbeatRequest {
 
   NodeStatus getNodeStatus();
@@ -29,6 +31,9 @@ public interface NodeHeartbeatRequest {
   MasterKey getLastKnownMasterKey();
   void setLastKnownMasterKey(MasterKey secretKey);
   
-  String getSplits();
-  void setSplits(String splits);
+  ByteString getPrefetchProgress();
+  void setPrefetchProgress(ByteString splits);
+  
+  int getAvailableWindow();
+  void setAvailableWindow(int availableWindow);
 }

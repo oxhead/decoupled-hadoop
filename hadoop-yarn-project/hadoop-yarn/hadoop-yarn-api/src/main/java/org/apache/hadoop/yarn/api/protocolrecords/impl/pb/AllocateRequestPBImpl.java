@@ -25,7 +25,6 @@ import java.util.List;
 
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateRequest;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
-import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ProtoBase;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
@@ -37,6 +36,8 @@ import org.apache.hadoop.yarn.proto.YarnProtos.ContainerIdProto;
 import org.apache.hadoop.yarn.proto.YarnProtos.ResourceRequestProto;
 import org.apache.hadoop.yarn.proto.YarnServiceProtos.AllocateRequestProto;
 import org.apache.hadoop.yarn.proto.YarnServiceProtos.AllocateRequestProtoOrBuilder;
+
+import com.google.protobuf.ByteString;
 
 
     
@@ -310,15 +311,39 @@ public class AllocateRequestPBImpl extends ProtoBase<AllocateRequestProto> imple
   }
   
   @Override
-  public String getSplits() {
+  public ByteString getPrefetchRequest() {
     AllocateRequestProtoOrBuilder p = viaProto ? proto : builder;
-    return p.getSplits();
+    return p.getPrefetchRequest();
   }
 
   @Override
-  public void setSplits(String splits) {
+  public void setPrefetchRequest(ByteString splits) {
     maybeInitBuilder();
-    builder.setSplits(splits);
+    builder.setPrefetchRequest(splits);
+  }
+  
+  @Override
+  public ByteString getCompletedPrefetchTasks() {
+    AllocateRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getCompletedPrefetchTasks();
+  }
+
+  @Override
+  public void setCompletedPrefetchTasks(ByteString splits) {
+    maybeInitBuilder();
+    builder.setCompletedPrefetchTasks(splits);
+  }
+  
+  @Override
+  public ByteString getFailedPrefetchTasks() {
+    AllocateRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getFailedPrefetchTasks();
+  }
+
+  @Override
+  public void setFailedPrefetchTasks(ByteString splits) {
+    maybeInitBuilder();
+    builder.setFailedPrefetchTasks(splits);
   }
 
   private ApplicationAttemptIdPBImpl convertFromProtoFormat(ApplicationAttemptIdProto p) {

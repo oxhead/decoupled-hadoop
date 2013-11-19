@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -38,15 +39,25 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.serializer.Deserializer;
+import org.apache.hadoop.io.serializer.SerializationFactory;
 import org.apache.hadoop.mapreduce.JobCounter;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.jobhistory.JobHistoryEvent;
 import org.apache.hadoop.mapreduce.jobhistory.NormalizedResourceEvent;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
+import org.apache.hadoop.mapreduce.split.JobSplit.TaskSplitMetaInfo;
 import org.apache.hadoop.mapreduce.v2.api.records.JobId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskAttemptId;
+import org.apache.hadoop.mapreduce.v2.api.records.TaskId;
 import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.client.ClientService;
+import org.apache.hadoop.mapreduce.v2.app.job.Task;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobCounterUpdateEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobDiagnosticsUpdateEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEvent;
@@ -57,6 +68,7 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptDiagnosticsUpdate
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptKillEvent;
+import org.apache.hadoop.mapreduce.v2.app.job.impl.MapTaskImpl;
 import org.apache.hadoop.util.StringInterner;
 import org.apache.hadoop.yarn.YarnException;
 import org.apache.hadoop.yarn.api.records.AMResponse;
@@ -66,7 +78,9 @@ import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.NodeReport;
 import org.apache.hadoop.yarn.api.records.NodeState;
+import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Priority;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.RackResolver;
 
@@ -155,6 +169,11 @@ public class RMContainerAllocator extends RMContainerRequestor
   @Override
   public void init(Configuration conf) {
     super.init(conf);
+    
+    isPrefetchEnabled = 
+      	  conf.getBoolean(YarnConfiguration.IM_ENABLED, YarnConfiguration.DEFAULT_IM_ENABLED);
+    LOG.error("@_@ Allocator: prefetch enabled=" + isPrefetchEnabled + "->" + YarnConfiguration.IM_ENABLED);
+    
     reduceSlowStart = conf.getFloat(
         MRJobConfig.COMPLETED_MAPS_FOR_REDUCE_SLOWSTART, 
         DEFAULT_COMPLETED_MAPS_PERCENT_FOR_REDUCE_SLOWSTART);
@@ -206,6 +225,21 @@ public class RMContainerAllocator extends RMContainerRequestor
     };
     this.eventHandlingThread.start();
     super.start();
+    if (isPrefetchEnabled) {
+    new Thread(){
+		@Override
+		public void run() {
+			while (getJob().getTasks().size() == 0) {
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					LOG.error("@@ Allocator: fail to create split requests");
+				}
+			}
+			createPrefetchRequest();
+		}
+    }.start();
+    }
   }
 
   @Override
@@ -213,7 +247,11 @@ public class RMContainerAllocator extends RMContainerRequestor
     scheduleStats.updateAndLogIfChanged("Before Scheduling: ");
     List<Container> allocatedContainers = getResources();
     if (allocatedContainers.size() > 0) {
-      scheduledRequests.assign(allocatedContainers);
+    		if (isPrefetchEnabled) {
+    			scheduledRequests.assignByPrefetching(allocatedContainers);
+    		} else {
+    			scheduledRequests.assign(allocatedContainers);
+    		}
     }
 
     int completedMaps = getJob().getCompletedMaps();
@@ -747,6 +785,55 @@ public class RMContainerAllocator extends RMContainerRequestor
       addContainerReq(req);
     }
     
+    @SuppressWarnings("unchecked")
+    private void assignByPrefetching(List<Container> allocatedContainers) {
+    		LOG.error("@@ Allocator: assign by prefetching: " + allocatedContainers.size());
+	  	Iterator<Container> it = allocatedContainers.iterator();
+	  	while (it.hasNext()) {
+	  		Container allocated = it.next();
+	  		if (PRIORITY_MAP.equals(allocated.getPriority()) || PRIORITY_FAST_FAIL_MAP.equals(allocated.getPriority())) {
+	  			LOG.error("@@ Allocator: container=" + allocated.getId().toString());
+		  		PrefetchInfo pi = assignedPrefetchContainers.get(allocated.getId().toString());
+		  		String taskId = pi.taskId;
+	  			LOG.error("@@ Allocator: assign container=" + allocated.getId() + " to task=" + taskId);
+	  			ContainerRequest containerRequest = pullContainerRequest(taskId, allocated.getPriority());
+	  			LOG.error("@@ Allocator: pull container request=" + containerRequest + ", task=" + taskId);
+	  			if (containerRequest == null) {
+	  				continue;
+	  			}
+	  			containerAssigned(allocated, containerRequest);
+	  			it.remove();
+	  			JobCounterUpdateEvent jce =
+	  	              new JobCounterUpdateEvent(containerRequest.attemptID.getTaskId().getJobId());
+	  	            jce.addCounterUpdate(JobCounter.DATA_LOCAL_MAPS, 1);
+	  	            eventHandler.handle(jce);
+	  		} else {
+	  			LOG.error("@@ Allocator: not a map task=" + allocated.getId());
+	  		}
+	  	}
+	  	LOG.error("@@ Allocator: allocated containers=" + allocatedContainers.size() + ", remaining containers=" + allocatedContainers.size());
+	  	assign(allocatedContainers);
+    }
+    private synchronized ContainerRequest pullContainerRequest(String taskId, Priority priority) {
+    		TaskAttemptId tid = null;
+    		for (Entry<TaskAttemptId, ContainerRequest> entry : maps.entrySet()) {
+    			// TODO: failed tasks can cause problem
+    			if (entry.getKey().getTaskId().toString().equals(taskId)) {
+    				tid = entry.getKey();
+    				break;
+    			}
+    		}
+    		ContainerRequest request = null;
+    		if (maps.containsKey(tid)) { 
+    			request = maps.remove(tid);
+    			if (PRIORITY_FAST_FAIL_MAP.equals(priority)) {
+    				earlierFailedMaps.remove(tid);
+    			}
+    		}
+		LOG.error("## task id lookup -> task=" + taskId + ", attemp=" + tid + ", request=" + request);		
+		return request;
+    }
+    
     // this method will change the list of allocatedContainers.
     private void assign(List<Container> allocatedContainers) {
       Iterator<Container> it = allocatedContainers.iterator();
@@ -1209,4 +1296,118 @@ public class RMContainerAllocator extends RMContainerRequestor
         " RackLocal:" + rackLocalAssigned);
     }
   }
+  
+  // modify from here -----------------------------
+  private boolean isPrefetchEnabled;
+  private Map<TaskId, PrefetchInfo> taskPrefetchRecord = new HashMap<TaskId, PrefetchInfo>();
+  private Map<String, PrefetchInfo> assignedPrefetchContainers = new HashMap<String, PrefetchInfo>();
+  private List<PrefetchInfo> completedPrefetchTask = new LinkedList<PrefetchInfo>();
+  private List<PrefetchInfo> failedPrefetchTask = new LinkedList<PrefetchInfo>();
+  private List<PrefetchInfo> prefetchRequests = new LinkedList<PrefetchInfo>();
+  
+  @Override
+  public boolean isPrefetchEnabled() {
+	return this.isPrefetchEnabled;
+  }
+
+  public void reportTaskComplete(TaskId taskId) {
+	  LOG.error("@@ AM: report task completion -> task=" + taskId);
+	  PrefetchInfo pi = taskPrefetchRecord.get(taskId);
+	  synchronized (completedPrefetchTask) {
+		  completedPrefetchTask.add(pi);
+	  }
+  }
+  
+  public void reportTaskFailed(TaskId taskId) {
+	  LOG.error("@@ AM: report task failure -> task=" + taskId);
+	  PrefetchInfo pi = taskPrefetchRecord.get(taskId);
+	  synchronized (failedPrefetchTask) {
+		  failedPrefetchTask.add(pi);
+	  }
+  }
+  
+  
+  @Override
+  public List<PrefetchInfo> getCompletedPrefetchTasks() {
+	  List<PrefetchInfo> completedList = new LinkedList<PrefetchInfo>(completedPrefetchTask);
+	  completedPrefetchTask.clear();
+	  return completedList;
+  }
+  
+  @Override
+  public List<PrefetchInfo> getFailedPrefetchTasks() {
+	  List<PrefetchInfo> failedList = new LinkedList<PrefetchInfo>(failedPrefetchTask);
+	  failedPrefetchTask.clear();
+	  return failedList;
+  } 
+  
+  public void createPrefetchRequest() {
+	  for (Task task : getJob().getTasks().values()) {
+		if (task.getType().equals(TaskType.MAP) && !task.isFinished()) {
+			TaskSplitMetaInfo split = ((MapTaskImpl)task).getTaskSplitMetaInfo();
+			try {
+				  org.apache.hadoop.mapreduce.InputSplit ss = getSplitDetails(new Path(split.getSplitLocation()), split.getStartOffset());
+				  FileSplit fss = (FileSplit) ss;
+				  PrefetchInfo pi = new PrefetchInfo();
+				  pi.meta = split.getSplitLocation();
+				  pi.metaOffset = (int) split.getStartOffset();
+				  pi.file = String.valueOf(fss.getPath());
+				  pi.fileOffset= (int) fss.getStart();
+				  pi.fileLength = (int) fss.getLength();
+				  pi.taskId = task.getID().toString();
+				  this.prefetchRequests.add(pi);
+				  this.taskPrefetchRecord.put(task.getID(), pi);
+			} catch (IOException e) {
+				LOG.error("@@ prefetch fail: " + e);
+			}
+		}  
+	  }
+  }
+  
+  @Override
+  public synchronized List<PrefetchInfo> getPrefetchRequest() {
+	  List<PrefetchInfo> requests = new LinkedList<PrefetchInfo>(this.prefetchRequests);
+	  this.prefetchRequests.clear();
+	  return requests;
+  }
+  
+  
+  
+  public void updatePrefetchStatus(List<PrefetchInfo> prefetchInfos) {
+	  LOG.error("@@ AM: update prefetch status with assigned containerId");
+	  for (PrefetchInfo pi : prefetchInfos) {
+		  if (pi.containerId != null) {
+			  LOG.error("\tAC: update assigned container -> task=" + pi.taskId + ", container=" + pi.containerId);
+			  assignedPrefetchContainers.put(pi.containerId, pi);
+		  } else {
+			  LOG.error("\tAC: split is not assigned yet -> task=" + pi.taskId);
+		  }
+		  
+	  }
+  }
+  
+  // core method above -------------
+  
+  private <T> T getSplitDetails(Path file, long offset) throws IOException {
+	   FileSystem fs = file.getFileSystem(getConfig());
+	   FSDataInputStream inFile = fs.open(file);
+	   inFile.seek(offset);
+	   String className = StringInterner.weakIntern(Text.readString(inFile));
+	   Class<T> cls;
+	   try {
+	     cls = (Class<T>) getConfig().getClassByName(className);
+	   } catch (ClassNotFoundException ce) {
+	     IOException wrap = new IOException("Split class " + className + 
+	                                         " not found");
+	     wrap.initCause(ce);
+	     throw wrap;
+	   }
+	   SerializationFactory factory = new SerializationFactory(getConfig());
+	   Deserializer<T> deserializer = 
+	     (Deserializer<T>) factory.getDeserializer(cls);
+	   deserializer.open(inFile);
+	   T split = deserializer.deserialize(null);
+	   inFile.close();
+	   return split;
+	 }
 }

@@ -26,6 +26,8 @@ import org.apache.hadoop.yarn.api.AMRMProtocol;
 import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.Container;
 
+import com.google.protobuf.ByteString;
+
 /**
  * <p>The response sent by the <code>ResourceManager</code> the  
  * <code>ApplicationMaster</code> during resource negotiation.</p>
@@ -77,9 +79,9 @@ public interface AllocateResponse {
   
   @Public
   @Unstable
-  public abstract String getSplits();
+  public abstract ByteString getAssignedSplits();
 
   @Public
   @Unstable
-  public abstract void setSplits(String splits);
+  public abstract void setAssignedSplits(ByteString splits);
 }

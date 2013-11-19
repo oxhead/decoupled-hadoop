@@ -29,6 +29,8 @@ import org.apache.hadoop.yarn.server.api.records.NodeStatus;
 import org.apache.hadoop.yarn.server.api.records.impl.pb.MasterKeyPBImpl;
 import org.apache.hadoop.yarn.server.api.records.impl.pb.NodeStatusPBImpl;
 
+import com.google.protobuf.ByteString;
+
 public class NodeHeartbeatRequestPBImpl extends
     ProtoBase<NodeHeartbeatRequestProto> implements NodeHeartbeatRequest {
   NodeHeartbeatRequestProto proto = NodeHeartbeatRequestProto.getDefaultInstance();
@@ -38,6 +40,7 @@ public class NodeHeartbeatRequestPBImpl extends
   private NodeStatus nodeStatus = null;
   private MasterKey lastKnownMasterKey = null;
   private String splits = null;
+  private int availableWindow = -1;
   
   public NodeHeartbeatRequestPBImpl() {
     builder = NodeHeartbeatRequestProto.newBuilder();
@@ -116,15 +119,27 @@ public class NodeHeartbeatRequestPBImpl extends
   }
   
   @Override
-  public String getSplits() {
+  public ByteString getPrefetchProgress() {
     NodeHeartbeatRequestProtoOrBuilder p = viaProto ? proto : builder;
-    return p.getSplits();
+    return p.getPrefetchProgress();
   }
 
   @Override
-  public void setSplits(String splits) {
+  public void setPrefetchProgress(ByteString splits) {
     maybeInitBuilder();
-    builder.setSplits(splits);
+    builder.setPrefetchProgress(splits);
+  }
+  
+  @Override
+  public int getAvailableWindow() {
+    NodeHeartbeatRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getAvailableWindow();
+  }
+
+  @Override
+  public void setAvailableWindow(int availableWindow) {
+    maybeInitBuilder();
+    builder.setAvailableWindow(availableWindow);
   }
 
   @Override

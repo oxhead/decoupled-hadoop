@@ -18,6 +18,7 @@
 package org.apache.hadoop.yarn.server.resourcemanager;
 
 import java.net.InetSocketAddress;
+import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -28,6 +29,7 @@ import org.apache.hadoop.net.Node;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.PolicyProvider;
 import org.apache.hadoop.yarn.api.records.NodeId;
+import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
@@ -51,9 +53,12 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeImpl;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeReconnectEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeStatusEvent;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.YarnScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.im.InMemoryScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.security.RMContainerTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.authorize.RMPolicyProvider;
 import org.apache.hadoop.yarn.service.AbstractService;
+import org.apache.hadoop.yarn.util.PrefetchUtils;
 import org.apache.hadoop.yarn.util.RackResolver;
 
 public class ResourceTrackerService extends AbstractService implements
@@ -68,7 +73,9 @@ public class ResourceTrackerService extends AbstractService implements
   private final NodesListManager nodesListManager;
   private final NMLivelinessMonitor nmLivelinessMonitor;
   private final RMContainerTokenSecretManager containerTokenSecretManager;
-  private InMemoryManager inMemoryManager;
+  
+  private YarnScheduler scheduler;
+  private boolean isPrefetchEnabled;
 
   private Server server;
   private InetSocketAddress resourceTrackerAddress;
@@ -101,17 +108,17 @@ public class ResourceTrackerService extends AbstractService implements
     this.containerTokenSecretManager = containerTokenSecretManager;
   }
   
-  public void setInMemoryManager(InMemoryManager inMemoryManager) {
-	  this.inMemoryManager = inMemoryManager;
-  }
-
   @Override
   public synchronized void init(Configuration conf) {
     resourceTrackerAddress = conf.getSocketAddr(
         YarnConfiguration.RM_RESOURCE_TRACKER_ADDRESS,
         YarnConfiguration.DEFAULT_RM_RESOURCE_TRACKER_ADDRESS,
         YarnConfiguration.DEFAULT_RM_RESOURCE_TRACKER_PORT);
-
+    
+    isPrefetchEnabled = 
+			conf.getBoolean(YarnConfiguration.IM_ENABLED, YarnConfiguration.DEFAULT_IM_ENABLED);
+    LOG.error("@_@ RT: prefetch enabled=" + isPrefetchEnabled + "->" + YarnConfiguration.IM_ENABLED);
+    
     RackResolver.init(conf);
     super.init(conf);
   }
@@ -148,7 +155,11 @@ public class ResourceTrackerService extends AbstractService implements
     }
     super.stop();
   }
-
+  
+  public void setScheduler(YarnScheduler scheduler) {
+	  this.scheduler = scheduler;
+  }
+  
   @SuppressWarnings("unchecked")
   @Override
   public RegisterNodeManagerResponse registerNodeManager(
@@ -210,8 +221,6 @@ public class ResourceTrackerService extends AbstractService implements
   public NodeHeartbeatResponse nodeHeartbeat(NodeHeartbeatRequest request)
       throws YarnRemoteException {
 
-    this.inMemoryManager.updatePrefetchList(request.getNodeStatus().getNodeId(), request.getSplits());
-	
     NodeStatus remoteNodeStatus = request.getNodeStatus();
     /**
      * Here is the node heartbeat sequence...
@@ -222,6 +231,13 @@ public class ResourceTrackerService extends AbstractService implements
      */
 
     NodeId nodeId = remoteNodeStatus.getNodeId();
+    
+    // 0. report prefetch progress
+    if (isPrefetchEnabled) {
+    	  List<PrefetchInfo> prefetchList = PrefetchUtils.serializedDecode(request.getPrefetchProgress());
+  	  ((InMemoryScheduler)this.scheduler).updatePrefetchProgress(nodeId, prefetchList);
+  	  ((InMemoryScheduler)this.scheduler).updateNodePrefetchWindow(nodeId, request.getAvailableWindow());
+  	}
 
     // 1. Check if it's a registered node
     RMNode rmNode = this.rmContext.getRMNodes().get(nodeId);
@@ -301,7 +317,14 @@ public class ResourceTrackerService extends AbstractService implements
             remoteNodeStatus.getKeepAliveApplications(), latestResponse));
 
     nodeHeartBeatResponse.setHeartbeatResponse(latestResponse);
-    nodeHeartBeatResponse.setSplits(this.inMemoryManager.askPrefetchList());
+    
+    if (isPrefetchEnabled) {
+    		List<PrefetchInfo> pendingPrefetchList = ((InMemoryScheduler)this.scheduler).pullPendingPrefetchList(nodeId, request.getAvailableWindow());
+    		List<PrefetchInfo> completedPrefetchList = ((InMemoryScheduler)this.scheduler).pullCompletedPrefetchList(nodeId);
+    	    nodeHeartBeatResponse.setPrefetchingSplits(PrefetchUtils.serializedEncode(pendingPrefetchList));
+    	    nodeHeartBeatResponse.setCompletedSplits(PrefetchUtils.serializedEncode(completedPrefetchList));
+    }
+    
     return nodeHeartBeatResponse;
   }
 

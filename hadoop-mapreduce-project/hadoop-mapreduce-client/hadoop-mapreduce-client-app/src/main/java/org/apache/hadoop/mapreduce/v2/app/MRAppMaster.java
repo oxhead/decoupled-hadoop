@@ -79,6 +79,7 @@ import org.apache.hadoop.mapreduce.v2.app.job.event.TaskAttemptEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.TaskEventType;
 import org.apache.hadoop.mapreduce.v2.app.job.impl.JobImpl;
+import org.apache.hadoop.mapreduce.v2.app.job.impl.MapTaskImpl;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncher;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherEvent;
 import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherImpl;
@@ -217,6 +218,11 @@ public class MRAppMaster extends CompositeService {
 
   @Override
   public void init(final Configuration conf) {
+	  
+	isPrefetchEnabled = 
+			conf.getBoolean(YarnConfiguration.IM_ENABLED, YarnConfiguration.DEFAULT_IM_ENABLED);
+	LOG.error("@_@ AM: prefetch enabled=" + isPrefetchEnabled + "->" + YarnConfiguration.IM_ENABLED);
+	  
     conf.setBoolean(Dispatcher.DISPATCHER_EXIT_ON_ERROR_KEY, true);
 
     downloadTokensAndSetupUGI(conf);
@@ -802,6 +808,18 @@ public class MRAppMaster extends CompositeService {
       ((Service)this.containerAllocator).stop();
       super.stop();
     }
+    
+    public void createSplit() {
+    		((RMContainerAllocator)this.containerAllocator).createPrefetchRequest();
+    }
+    
+    public void reportTaskComplete(TaskId taskId) {
+    		((RMContainerAllocator)this.containerAllocator).reportTaskComplete(taskId);
+    }
+    
+    public void reportTaskFailed(TaskId taskId) {
+		((RMContainerAllocator)this.containerAllocator).reportTaskComplete(taskId);
+    }
 
     @Override
     public void handle(ContainerAllocatorEvent event) {
@@ -893,8 +911,6 @@ public class MRAppMaster extends CompositeService {
     private final Configuration conf;
     private final ClusterInfo clusterInfo = new ClusterInfo();
     
-    public TaskSplitMetaInfo[] splitInfo;
-
     public RunningAppContext(Configuration config) {
       this.conf = config;
     }
@@ -950,15 +966,6 @@ public class MRAppMaster extends CompositeService {
     }
   }
 
-  private void setSplitInfo(TaskSplitMetaInfo[] splitInfo) {
-	 ((RunningAppContext)this.context).splitInfo = splitInfo;
-  }
-  
-  public TaskSplitMetaInfo[] getSplitInfo() {
-	  return ((RunningAppContext)this.context).splitInfo;
-  }
-  
-  
   @SuppressWarnings("unchecked")
   @Override
   public void start() {
@@ -985,22 +992,6 @@ public class MRAppMaster extends CompositeService {
 
     // /////////////////// Create the job itself.
     job = createJob(getConfig(), forcedState, shutDownMessage);
-    new Thread(){
-
-		@Override
-		public void run() {
-			while (((JobImpl)job).splitInfo == null) {
-				LOG.error("check split info is ready");
-				try {
-					sleep(1000);
-				} catch (InterruptedException e) {
-					LOG.error("Job cannot get split info");
-				}
-			}
-			setSplitInfo(((JobImpl)job).splitInfo);
-			LOG.error("split info is ready: " + getSplitInfo());
-		}}.start();
-
     // End of creating the job.
 
     // Send out an MR AM inited event for this AM and all previous AMs.
@@ -1128,6 +1119,16 @@ public class MRAppMaster extends CompositeService {
     public void handle(TaskEvent event) {
       Task task = context.getJob(event.getTaskID().getJobId()).getTask(
           event.getTaskID());
+      if (event.getTaskID().getTaskType().equals(TaskType.MAP)) {
+	      if (event.getType().equals(TaskEventType.T_ATTEMPT_SUCCEEDED)) {
+	    	    LOG.error("@@ AM: task completion event=" + event.getTaskID());
+	    	  	((ContainerAllocatorRouter)containerAllocator).reportTaskComplete(event.getTaskID());
+	      } else if (event.getType().equals(TaskEventType.T_ATTEMPT_KILLED) || event.getType().equals(TaskEventType.T_ATTEMPT_FAILED)) {
+	    	  LOG.error("@@ AM: task failed event=" + event.getTaskID());
+	    	  	((ContainerAllocatorRouter)containerAllocator).reportTaskFailed(event.getTaskID());
+	      }
+      }
+      LOG.error("@@ AM: maps=" + context.getJob(event.getTaskID().getJobId()).getCompletedMaps() + ", reduces=" + context.getJob(event.getTaskID().getJobId()).getCompletedReduces());
       ((EventHandler<TaskEvent>)task).handle(event);
     }
   }
@@ -1305,4 +1306,7 @@ public class MRAppMaster extends CompositeService {
       }
     });
   }
+  
+  // modifiy from here -----------
+  private boolean isPrefetchEnabled;
 }

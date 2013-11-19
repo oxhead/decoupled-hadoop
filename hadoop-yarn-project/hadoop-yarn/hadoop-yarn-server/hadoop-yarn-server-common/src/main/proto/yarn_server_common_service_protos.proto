@@ -36,10 +36,12 @@ message RegisterNodeManagerResponseProto {
 message NodeHeartbeatRequestProto {
   optional NodeStatusProto node_status = 1;
   optional MasterKeyProto last_known_master_key = 2;
-  optional string splits = 3;
+  optional bytes prefetchProgress = 3;
+  optional int32 availableWindow = 4;
 }
 
 message NodeHeartbeatResponseProto {
   optional HeartbeatResponseProto heartbeat_response = 1;
-  optional string splits = 2;
+  optional bytes prefetchingSplits = 2;
+  optional bytes completedSplits = 3;
 }

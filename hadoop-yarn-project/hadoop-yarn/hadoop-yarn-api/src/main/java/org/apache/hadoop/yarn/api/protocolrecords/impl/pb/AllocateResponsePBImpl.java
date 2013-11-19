@@ -19,6 +19,8 @@
 package org.apache.hadoop.yarn.api.protocolrecords.impl.pb;
 
 
+import java.nio.ByteBuffer;
+
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.ProtoBase;
@@ -26,6 +28,8 @@ import org.apache.hadoop.yarn.api.records.impl.pb.AMResponsePBImpl;
 import org.apache.hadoop.yarn.proto.YarnProtos.AMResponseProto;
 import org.apache.hadoop.yarn.proto.YarnServiceProtos.AllocateResponseProto;
 import org.apache.hadoop.yarn.proto.YarnServiceProtos.AllocateResponseProtoOrBuilder;
+
+import com.google.protobuf.ByteString;
 
 
     
@@ -110,15 +114,15 @@ public class AllocateResponsePBImpl extends ProtoBase<AllocateResponseProto>
   }
   
   @Override
-  public String getSplits() {
+  public ByteString getAssignedSplits() {
 	AllocateResponseProtoOrBuilder p = viaProto ? proto : builder;
-    return p.getSplits();
+    return p.getAssignedSplits();
   }
 
   @Override
-  public void setSplits(String splits) {
+  public void setAssignedSplits(ByteString splits) {
     maybeInitBuilder();
-    builder.setSplits(splits);
+    builder.setAssignedSplits(splits);
   }
 
   

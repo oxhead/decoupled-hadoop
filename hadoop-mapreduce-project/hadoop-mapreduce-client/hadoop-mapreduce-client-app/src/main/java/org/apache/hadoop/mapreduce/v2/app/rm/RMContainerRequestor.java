@@ -19,9 +19,11 @@
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +53,7 @@ import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.MRAppMaster.RunningAppContext;
 import org.apache.hadoop.mapreduce.v2.app.client.ClientService;
 import org.apache.hadoop.mapreduce.v2.app.job.Task;
+import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
 import org.apache.hadoop.mapreduce.v2.app.job.impl.MapTaskImpl;
 import org.apache.hadoop.util.StringInterner;
 import org.apache.hadoop.yarn.YarnException;
@@ -62,11 +65,14 @@ import org.apache.hadoop.yarn.api.records.PrefetchInfo;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.BuilderUtils;
 import org.apache.hadoop.yarn.util.PrefetchUtils;
+
+import com.google.protobuf.ByteString;
 
 
 /**
@@ -105,7 +111,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   private final Map<String, Integer> nodeFailures = new HashMap<String, Integer>();
   private final Set<String> blacklistedNodes = Collections
       .newSetFromMap(new ConcurrentHashMap<String, Boolean>());
-
+  
   public RMContainerRequestor(ClientService clientService, AppContext context) {
     super(clientService, context);
   }
@@ -145,6 +151,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   @Override
   public void init(Configuration conf) {
     super.init(conf);
+    
     nodeBlacklistingEnabled = 
       conf.getBoolean(MRJobConfig.MR_AM_JOB_NODE_BLACKLISTING_ENABLE, true);
     LOG.info("nodeBlacklistingEnabled:" + nodeBlacklistingEnabled);
@@ -163,74 +170,47 @@ public abstract class RMContainerRequestor extends RMCommunicator {
     LOG.info("blacklistDisablePercent is " + blacklistDisablePercent);
   }
   
-  private List<PrefetchInfo> getPrefetchSplits() {
-	  LOG.error("@@ AM: request gets splits");
-	  TaskSplitMetaInfo[] splitInfo = ((RunningAppContext)getContext()).splitInfo;
-	  if (splitInfo == null || splitInfo.length < 1) {
-		  return null;
-	  }
-	  List<PrefetchInfo> prefetchList = new LinkedList<PrefetchInfo>();
-	  for (TaskSplitMetaInfo split: splitInfo) {
-		  try {
-			  org.apache.hadoop.mapreduce.InputSplit ss = getSplitDetails(new Path(split.getSplitLocation()), split.getStartOffset());
-			  FileSplit fss = (FileSplit) ss;
-			  PrefetchInfo pi = new PrefetchInfo();
-			  pi.meta = split.getSplitLocation();
-			  pi.metaOffset = String.valueOf(split.getStartOffset());
-			  pi.file = String.valueOf(fss.getPath());
-			  pi.fileOffset= String.valueOf(fss.getStart());
-			  pi.fileLength = String.valueOf(fss.getLength());
-			  prefetchList.add(pi);
-		} catch (IOException e) {
-			LOG.error("@@ prefetch fail: " + e);
-		}
-	  }
-	  return prefetchList;
-  }
-  
-  private boolean splitSent = false;
-  
-  private <T> T getSplitDetails(Path file, long offset) throws IOException {
-		   FileSystem fs = file.getFileSystem(getConfig());
-		   FSDataInputStream inFile = fs.open(file);
-		   inFile.seek(offset);
-		   String className = StringInterner.weakIntern(Text.readString(inFile));
-		   Class<T> cls;
-		   try {
-		     cls = (Class<T>) getConfig().getClassByName(className);
-		   } catch (ClassNotFoundException ce) {
-		     IOException wrap = new IOException("Split class " + className + 
-		                                         " not found");
-		     wrap.initCause(ce);
-		     throw wrap;
-		   }
-		   SerializationFactory factory = new SerializationFactory(getConfig());
-		   Deserializer<T> deserializer = 
-		     (Deserializer<T>) factory.getDeserializer(cls);
-		   deserializer.open(inFile);
-		   T split = deserializer.deserialize(null);
-		   inFile.close();
-		   return split;
-		 }
-
   protected AMResponse makeRemoteRequest() throws YarnRemoteException {
     AllocateRequest allocateRequest = BuilderUtils.newAllocateRequest(
         applicationAttemptId, lastResponseID, super.getApplicationProgress(),
         new ArrayList<ResourceRequest>(ask), new ArrayList<ContainerId>(
             release));
-    
-    if (!splitSent) {
-    		LOG.error("@@ AM->RM: make request");
-    		List<PrefetchInfo> prefetchList = getPrefetchSplits();
-    		if (prefetchList!=null){
-    			String s = PrefetchUtils.encode(prefetchList);
-    			LOG.error("@@ split: " + s);
-    			allocateRequest.setSplits(s);
-    			splitSent = true;
-        }
+    if (isPrefetchEnabled()) {
+    		// prefetch request
+	    	LOG.error("@@ AM: make request");
+	    	List<PrefetchInfo> prefetchList = getPrefetchRequest();
+	    	ByteString prefetchRequest = PrefetchUtils.serializedEncode(prefetchList);
+	    	allocateRequest.setPrefetchRequest(prefetchRequest);
+	    	
+	    	// completed prefetch task: container id
+	    	List<PrefetchInfo> completedPrefetchTasks = getCompletedPrefetchTasks();
+	    	LOG.error("@@ AM: completed tasks -> size=" + completedPrefetchTasks.size());
+	    	for (PrefetchInfo pi: completedPrefetchTasks) {
+	    		LOG.error("\t" + pi);
+	    	}
+	    	ByteString completedTasks = PrefetchUtils.serializedEncode(completedPrefetchTasks);
+	    	allocateRequest.setCompletedPrefetchTasks(completedTasks);
+	    	
+	    	// failed prefetch task: container id
+	    	List<PrefetchInfo> failedPrefetchTasks = getFailedPrefetchTasks();
+	    	LOG.error("@@ AM: failed tasks -> size=" + failedPrefetchTasks.size());
+	    	for (PrefetchInfo pi: failedPrefetchTasks) {
+	    		LOG.error("\t" + pi);
+	    	}
+	    	ByteString failedTasks = PrefetchUtils.serializedEncode(failedPrefetchTasks);
+	    	allocateRequest.setFailedPrefetchTasks(failedTasks);
     }
+    LOG.error("@@ Requestor: allocate request num=" + allocateRequest.getAskList().size());
     AllocateResponse allocateResponse = scheduler.allocate(allocateRequest);
-    LOG.error("@@ AM<-RM: received split: " + allocateResponse.getSplits());
+    
+    // Prefetching hack
+    if (isPrefetchEnabled()) {
+    		ByteString prefetchStatus = allocateResponse.getAssignedSplits();
+    		List<PrefetchInfo> prefetchStatusList = PrefetchUtils.serializedDecode(prefetchStatus);
+    		LOG.error("@@ AM: received split: " + prefetchStatusList.size());
+    		updatePrefetchStatus(prefetchStatusList);
+    }
+    
     AMResponse response = allocateResponse.getAMResponse();
     lastResponseID = response.getResponseId();
     availableResources = response.getAvailableResources();
@@ -482,4 +462,11 @@ public abstract class RMContainerRequestor extends RMCommunicator {
         hosts, orig.racks, orig.priority); 
     return newReq;
   }
+  
+  public abstract boolean isPrefetchEnabled();
+  public abstract List<PrefetchInfo> getPrefetchRequest();
+  public abstract List<PrefetchInfo> getCompletedPrefetchTasks();
+  public abstract List<PrefetchInfo> getFailedPrefetchTasks();
+  public abstract void updatePrefetchStatus(List<PrefetchInfo> prefetchInfos);
+
 }

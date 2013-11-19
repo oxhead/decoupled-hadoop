@@ -27,8 +27,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.FileDescriptor;
+import java.io.RandomAccessFile;
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
+import java.rmi.dgc.VMID;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -53,6 +58,8 @@ import org.apache.hadoop.util.StringUtils;
 public class RawLocalFileSystem extends FileSystem {
   static final URI NAME = URI.create("file:///");
   private Path workingDir;
+  private boolean isPrefetchEnabled;
+  private boolean isPrefetchInputStreamEnabled;
   
   public RawLocalFileSystem() {
     workingDir = getInitialWorkingDirectory();
@@ -82,6 +89,9 @@ public class RawLocalFileSystem extends FileSystem {
   public void initialize(URI uri, Configuration conf) throws IOException {
     super.initialize(uri, conf);
     setConf(conf);
+    isPrefetchEnabled = getConf().getBoolean("yarn.inmemory.enabled", false);
+    isPrefetchInputStreamEnabled = getConf().getBoolean("yarn.inmemory.prefetch.inputstream.enabled", false);
+    LOG.error("@@ FS: prefetch enabled=" + isPrefetchEnabled + ", prefetch inputstream enabled=" + isPrefetchInputStreamEnabled);
   }
   
   class TrackingFileInputStream extends FileInputStream {
@@ -169,13 +179,22 @@ public class RawLocalFileSystem extends FileSystem {
       }
     }
     
+    long totalTime = 0;
+    long totalRead = 0;
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
       try {
+    	    LOG.error("@@ FS: going to read -> buf=" + b.length + ",off=" + off + ", len=" + len);
+    	    long startTime = System.nanoTime();
         int value = fis.read(b, off, len);
+        long ioTime = System.nanoTime() - startTime;
+        LOG.error("@@ FS: finish to read");
         if (value > 0) {
           this.position += value;
         }
+        totalTime += ioTime;
+        totalRead+=value;
+        LOG.error("@_@ NFS IO time=" + ioTime + ", total=" + totalTime);
         return value;
       } catch (IOException e) {                 // unexpected exception
         throw new FSError(e);                   // assume native fs error
@@ -213,7 +232,7 @@ public class RawLocalFileSystem extends FileSystem {
     if (!exists(f)) {
       throw new FileNotFoundException(f.toString());
     }
-    if (isPrefetchPath(f.toUri().getPath())) {
+    if (isPrefetchEnabled && isPrefetchInputStreamEnabled && isPrefetchPath(f.toUri().getPath())) {
     		LOG.error("@@ FS: open prefetch input stream=" + f);
     		return new FSDataInputStream(new BufferedFSInputStream(new PrefetchedFileInputStream(f), bufferSize));
     }
@@ -223,75 +242,198 @@ public class RawLocalFileSystem extends FileSystem {
   }
   
   private boolean isPrefetchPath(String path) {
-//	  return false;
+//	  	  return false;
 	  //return path.contains("nfs") && !path.contains("split") && !path.contains("crc") && !path.contains("staging")?true:false;
-	  return path.contains("nfs") && !path.contains("split") && !path.contains("crc") && !path.contains("staging") && (path.contains("bgwiki") || !path.contains("."))?true:false;
+	  return path.contains("nfs") && !path.contains("split") && !path.contains("crc") && !path.contains("staging") && ((path.contains("bgwiki") || path.contains("file")) || !path.contains("."))?true:false;
   }
   
   class 
   PrefetchedFileInputStream extends FSInputStream implements HasFileDescriptor {
 	    private FileInputStream fis;
 	    private long position;
-	    private Map<Integer, FileInputStream> fisRecords = new HashMap<Integer, FileInputStream>();
+	    private File currentPrefetchFile;
 	    private FileInputStream currentFis;
 	    private int currentBlockIndex;
+	    private RandomAccessFile currentProgress;
+	    private long nextReadBoundary;
 	    private int blockSize = 64*1024*1024;
 	    private File prefetchDir = new File("/dev/shm/hadoop");
 	    private Path f;
-
+	    private long blockReadCount;
+	    private MappedByteBuffer currentRecord;
+	    private FileChannel currentFileChannel;
+	    private int maxBlockIndex;
+	    private int fileSize;
+	    private boolean isPrefetchStream;
+	    
+	    private VMID vmid = new VMID();
+	    
 	    public PrefetchedFileInputStream(Path f) throws IOException {
 	      this.fis = new TrackingFileInputStream(pathToFile(f));
 	      this.currentFis = fis;
 	      this.f = f;
 	      this.currentBlockIndex = -1;
 	      this.position = 0;
+	      this.maxBlockIndex = this.fis.available() / blockSize - 1 + (this.fis.available() % blockSize > 0 ? 1 : 0);
+	      this.fileSize = this.available();
 	      switchPrefetchInputStream(0);
 	    }
 	    
-	    private boolean isPrefetchBlockReady(int blockIndex) {
-	    		return true;
+	    private File convertPrefetchProgressFilePath(int blockIndex) {
+    			File prefetchBlockFile = new File(prefetchDir, f.getName() + "." + blockSize + "."+(blockSize*blockIndex) + ".progress");
+    			return prefetchBlockFile;
 	    }
 	    
-	    private void switchPrefetchInputStream(long pos) throws FileNotFoundException  {
+	    private File convertPrefetchFilePath(int blockIndex) {
+	    		File prefetchBlockFile = new File(prefetchDir, f.getName() + "." + blockSize + "."+(blockSize*blockIndex));
+	    		return prefetchBlockFile;
+	    }
+	    
+	    private boolean waitForFile(File file, int count, long delay) {
+	    		int waitCount = 0;
+	    		while (waitCount < count && !file.exists()) {
+	    			try {
+	    				LOG.error("[" + this.vmid + "] FS: waiting for file to present -> file=" + file.getPath());
+	    				Thread.sleep(delay);
+				} catch (InterruptedException e) {
+					LOG.error("[" + this.vmid + "] FS: waiting failed -> file=" + file.getPath(), e);
+				}
+	    		}
+	    		return file.exists();
+	    	
+	    }
+	    
+	    private void switchPrefetchInputStream(long pos) throws IOException  {
 	    		int blockIndex = (int) (pos/blockSize);
-	    		if (blockIndex != this.currentBlockIndex) {
-	    			File prefetchBlockFile = new File(prefetchDir, f.getName() + "." + blockSize + "."+(blockSize*blockIndex));
-	    			FileInputStream fis = new FileInputStream(prefetchBlockFile);
-	    			this.currentFis = fis;
-	    			this.currentBlockIndex = blockIndex;
+	    		LOG.error("[" + this.vmid + "] FS: blockIndex=" + blockIndex + ", currentBlockIndex="+ this.currentBlockIndex + ", position=" + pos + ", available=" + this.fis.available());
+	    		if (pos >= this.fileSize) {
+	    			switchToLocalInputStream();
+	    			// TODO: should this be only the file size?
+	    			this.nextReadBoundary = this.fileSize;
+	    		} else {
+		    		if (blockIndex != this.currentBlockIndex) {
+		    			File prefetchBlockProgressFile = convertPrefetchProgressFilePath(blockIndex);
+		    			File prefetchBlockFile = convertPrefetchFilePath(blockIndex);
+		    			this.currentBlockIndex = blockIndex;
+		    			this.blockReadCount = 0;
+		    			
+	    				LOG.error("[" + this.vmid + "] FS: prefetch block file=" + prefetchBlockFile.exists() + ", progress file=" + prefetchBlockProgressFile.exists());
+		    			//if (waitForFile(prefetchBlockProgressFile, 10, 100) && waitForFile(prefetchBlockProgressFile, 10, 100)) {
+		    			if (prefetchBlockFile.exists() && prefetchBlockProgressFile.exists())
+		    			{
+		    				LOG.error("[" + this.vmid + "] FS: switch to prefetch inputstream -> " + prefetchBlockFile.getPath());
+		    				this.currentPrefetchFile = prefetchBlockFile;
+		    				this.currentFis = new FileInputStream(prefetchBlockFile);
+		    				this.currentProgress = new RandomAccessFile(prefetchBlockProgressFile, "r");
+		    				//TODO: block size must be equal to the prefetch file size
+		    				//this.currentFileChannel = new FileInputStream(prefetchBlockFile).getChannel();
+		    				//this.currentRecord = this.currentFileChannel.map(MapMode.READ_ONLY, 0, blockSize);
+		    				isPrefetchStream = true;
+		    			} else {
+		    				switchToLocalInputStream();
+		    			}
+		    			this.nextReadBoundary = (this.currentBlockIndex+1) * blockSize;
+		    		}
 	    		}
 	    }
 	    
-	    private long getBlockBoundary(int blockIndex) {
-	    		return (blockIndex+1) * blockSize - 1;
+	    private void switchToLocalInputStream() {
+	    	    LOG.error("[" + this.vmid + "] FS: switch to local inputstream");
+			this.currentPrefetchFile = null;
+			this.currentFis = this.fis;
+			this.currentProgress = null;
+			this.currentRecord = null;
+			this.currentFileChannel = null;
+			this.isPrefetchStream = false;
 	    }
 	    
+	    private int getBlockProgress() {
+	    		try {
+		    		this.currentProgress.seek(0);
+		    		int value = this.currentProgress.readInt();
+		    		return value;
+	    		} catch (Exception e) {
+		    		LOG.error("[" + this.vmid + "] progress file is not ready", e);
+		    	}
+		    	return -1;
+	    }
+	    
+	    long progressTotalTime = 0;
+	    long switchTotalTime = 0;
+	    long realTotalTime = 0;
 	    private int readFromPrefetching(byte[] b, int off, int len) throws IOException {
-	    		int nRead = 0;
-	    		int value = 0;
-	    		while (nRead<len && value != -1) {
+	    		long switchStartTime = System.nanoTime();
+	    		switchPrefetchInputStream(getPos());
+	    		long switchTime = System.nanoTime() - switchStartTime;
+	    		switchTotalTime += switchTime;
+	    		LOG.error("@@ Switch IO time=" + switchTime + ", total=" + switchTotalTime);
+	    		if (this.isPrefetchStream) {
+	    			long progressStartTime = System.nanoTime();
+	    			int progress = getBlockProgress();
+	    			long progressTime = System.nanoTime() - progressStartTime;
+	    			LOG.error("@@ Progress IO time=" + progressTime + ", total=" + progressTotalTime);
+	    			int progressPosition = this.currentBlockIndex * blockSize + progress;
+	    			if (getPos() + len <= progressPosition) {
+	    				long realStartTime = System.nanoTime();
+	    				int value = this.currentFis.read(b, off, len);
+	    				//ByteBuffer bb = ByteBuffer.wrap(b, off, len);
+			    		//int value = this.currentFileChannel.read(bb);
+	    				long realTime = System.nanoTime() - realStartTime;
+	    				realTotalTime += realTime;
+	    				LOG.error("@@ Real prefetching IO time=" + realTime + ", total=" + realTotalTime);
+			    		return value;
+	    			} 
+	    		} 
+	    		return Integer.MIN_VALUE;
+	    			/**
+	    			int nRead = 0;
+		    		int value = 0;
+		    		while (nRead<len && value != -1) {
+		    			switchPrefetchInputStream(getPos());
 	    			int remainging = len-nRead;
-	    			switchPrefetchInputStream(getPos());
-	    			long nextReadBoundary = getBlockBoundary(this.currentBlockIndex);
-	    			int readLen  = (int) (getPos() + remainging <= nextReadBoundary? remainging : (nextReadBoundary - getPos() + 1));
-	    			LOG.error("@@ FS: pread => pos=" + getPos() + ", block=" + this.currentBlockIndex + ", offset=" + off + ", len=" + len + ", remaining=" + remainging);
-	    			LOG.error("@@ FS: pread => boffset=" + (off + nRead) +  ", readLen=" + readLen + ", nextRead=" + (getPos() + readLen) + ", boundary=" + nextReadBoundary + ", remaining=" + this.currentFis.available());
-	    			value = this.currentFis.read(b, off + nRead, readLen);
-	    			LOG.error("@@ FS: pread => value=" + value);
-	    			if (value>=0) {
-	    				nRead += value;
-	    				skip(value);
+	    			int readLen = (int) (getPos() + remainging < this.nextReadBoundary? remainging : (this.nextReadBoundary - getPos()));
+	    			int readOffset = off + nRead;
+	    			LOG.error("[" + this.vmid + "] FS: nRead=" + nRead + ", remaining=" + remainging + ", readOffset=" + readOffset + ", readLen=" + readLen + ", position=" + getPos());
+	    			// this block is prefetched
+	    			if (this.isPrefetchStream) {
+	    				int progress = -1;
+	    				// TODO: problemetic
+	    				int readTries = 0;
+	    				int maxReadTries = 10;
+	    				while ( readTries++ < maxReadTries && ((progress = getBlockProgress()) == -1 ) && (progress < (this.blockReadCount + readLen)) ) {
+	    					try {
+	    							LOG.error("[" + this.vmid + "] FS: read tries=" + readTries);
+//	    							LOG.error("@@ FS: blockReadCount=" + this.blockReadCount + ", nexReadPosition=" + (this.blockReadCount + readLen) + ", progress=" + progress);
+//	    							LOG.error("@@ FS: prefetching data is not ready");
+								Thread.sleep(10);
+							} catch (InterruptedException e) {
+								LOG.error("[" + Thread.currentThread().getId() + "] FS: failure happened while waiting", e);
+							}
+	    				}
+	    				if (progress == -1) {
+	    					throw new IOException("Progress file is not ready");
+	    				}
+	    				LOG.error("[" + this.vmid + "] FS: blockReadCount=" + this.blockReadCount + ", nexReadPosition=" + (this.blockReadCount + readLen) + ", progress=" + progress);
+		    			LOG.error("[" + this.vmid + "] FS: pread => pos=" + getPos() + ", block=" + this.currentBlockIndex + ", offset=" + off + ", len=" + len + ", remaining=" + remainging);
+		    			LOG.error("[" + this.vmid + "] FS: pread => bLength=" + b.length + ", bOffset=" + (off + nRead) +  ", bReadLen=" + readLen + ", nextRead=" + (getPos() + readLen) + ", boundary=" + nextReadBoundary + ", remaining=" + this.currentFileChannel.size());
+		    			ByteBuffer bb = ByteBuffer.wrap(b, readOffset, readLen);
+		    			value = this.currentFileChannel.read(bb);
+	    				//this.currentRecord.get(b, readOffset, readLen);
+		    			LOG.error("[" + this.vmid + "] FS: pread => value=" + value);
+		    			if (value > 0) {
+		    				this.blockReadCount += value;
+		    				nRead += value;
+		    			} else {
+		    				LOG.equals("[" + this.vmid + "] FS: reached EOF");
+		    				break;
+		    			}
 	    			} else {
-	    				break;
+	    				throw new IOException("[" + this.vmid + "] The block is not prefetched yet -> position=" + getPos() + ", length=" + len);
 	    			}
 	    			
 	    		}
 	    		return nRead;
-	    }
-	    
-	    private int readFromPrefetching(long position, byte[] b, int off, int len) throws IOException {
-	    		seek(position);
-	    		return readFromPrefetching(b, off, len);
+	    		*/
 	    }
 	    
 	    @Override
@@ -323,24 +465,40 @@ public class RawLocalFileSystem extends FileSystem {
 	    @Override
 	    public int read() throws IOException {
 	      try {
-	    	  	switchPrefetchInputStream(getPos());
-	        int value = this.currentFis.read();
-	        if (value >= 0) {
-	          this.position++;
-	        }
-	        return value;
+	    	  	// TODO: need to read from prefetching input stream
+	    	  	return this.fis.read();
 	      } catch (IOException e) {                 // unexpected exception
 	        throw new FSError(e);                   // assume native fs error
 	      }
 	    }
-	    
+	    long totalRead = 0;
+	    long totalTime = 0;
 	    @Override
 	    public int read(byte[] b, int off, int len) throws IOException {
 	      try {
-	    	  	int value = readFromPrefetching(b, off, len);
-	        if (value >= 0) {
+	    	  	int value;
+	    	    LOG.error("@@ FS: going to read -> buf=" + b.length + ",off=" + off + ", len=" + len);
+	    	    long localStartTime = System.nanoTime();
+	    	  	value = readFromPrefetching(b, off, len);
+	    	  	long localTime = System.nanoTime() - localStartTime;
+		    totalTime += localTime;
+		    totalRead+=value;
+		    LOG.error("@_@ Prefetching IO time=" + localTime + ", total=" + totalTime);
+	    	  	// LOG.error("@@ FS: real read=" + value);
+		    if (value > 0) {
+		        this.position += value;
+		        skip(value);
+		        return value;
+		    } 
+	    	    long remoteStartTime = System.nanoTime();
+	    	  	value = fis.read(b, off, len);
+	    	  	long remoteTime = System.nanoTime() - remoteStartTime;
+	        if (value > 0) {
 	          this.position += value;
 	        }
+	        totalTime += remoteTime;
+	        totalRead += value;
+	        LOG.error("@_@ Prefetching IO time=" + remoteTime + ", total=" + totalTime);
 	        return value;
 	      } catch (IOException e) {                 // unexpected exception
 	        throw new FSError(e);                   // assume native fs error
@@ -351,8 +509,9 @@ public class RawLocalFileSystem extends FileSystem {
 	    public int read(long position, byte[] b, int off, int len)
 	      throws IOException {
 	      try {
-	    	  		int value = readFromPrefetching(position, b, off, len);
-		        if (value >= 0) {
+	    	  		seek(position);
+	    	  		int value = read(b, off, len);
+		        if (value > 0) {
 		          this.position += value;
 		        }
 		        return value;

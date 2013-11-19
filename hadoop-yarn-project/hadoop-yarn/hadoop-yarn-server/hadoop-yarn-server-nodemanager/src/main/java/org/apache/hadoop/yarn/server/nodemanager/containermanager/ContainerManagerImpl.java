@@ -68,6 +68,7 @@ import org.apache.hadoop.yarn.server.nodemanager.ContainerExecutor;
 import org.apache.hadoop.yarn.server.nodemanager.ContainerManagerEvent;
 import org.apache.hadoop.yarn.server.nodemanager.Context;
 import org.apache.hadoop.yarn.server.nodemanager.DeletionService;
+import org.apache.hadoop.yarn.server.nodemanager.InMemoryService;
 import org.apache.hadoop.yarn.server.nodemanager.LocalDirsHandlerService;
 import org.apache.hadoop.yarn.server.nodemanager.NMAuditLogger;
 import org.apache.hadoop.yarn.server.nodemanager.NMAuditLogger.AuditConstants;
@@ -125,6 +126,9 @@ public class ContainerManagerImpl extends CompositeService implements
   private final ApplicationACLsManager aclsManager;
 
   private final DeletionService deletionService;
+  
+  private InMemoryService inMemoryService;
+  private boolean isPrefetchEnabled;
 
   public ContainerManagerImpl(Context context, ContainerExecutor exec,
       DeletionService deletionContext, NodeStatusUpdater nodeStatusUpdater,
@@ -185,6 +189,11 @@ public class ContainerManagerImpl extends CompositeService implements
     if (object instanceof Service) {
       addService((Service) object);
     }
+  }
+  
+  public void setInMemoryService(InMemoryService inMemoryService) {
+	  this.inMemoryService = inMemoryService;
+	  this.isPrefetchEnabled = true;
   }
 
   protected LogHandler createLogHandler(Configuration conf, Context context,
@@ -392,9 +401,13 @@ public class ContainerManagerImpl extends CompositeService implements
   public StartContainerResponse startContainer(StartContainerRequest request)
       throws YarnRemoteException {
     ContainerLaunchContext launchContext = request.getContainerLaunchContext();
-
+    
     ContainerId containerID = launchContext.getContainerId();
     String containerIDStr = containerID.toString();
+    
+    if (isPrefetchEnabled) {
+    		this.inMemoryService.notifyStartedContainer(containerID);
+    }
 
     UserGroupInformation remoteUgi = getRemoteUgi(containerIDStr);
     authorizeRequest(containerIDStr, launchContext, remoteUgi);

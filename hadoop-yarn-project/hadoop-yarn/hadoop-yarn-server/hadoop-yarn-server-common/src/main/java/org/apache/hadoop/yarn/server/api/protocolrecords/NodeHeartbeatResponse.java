@@ -20,11 +20,16 @@ package org.apache.hadoop.yarn.server.api.protocolrecords;
 
 import org.apache.hadoop.yarn.server.api.records.HeartbeatResponse;
 
+import com.google.protobuf.ByteString;
+
 public interface NodeHeartbeatResponse {
   public abstract HeartbeatResponse getHeartbeatResponse();
   
   public abstract void setHeartbeatResponse(HeartbeatResponse heartbeatResponse);
   
-  public abstract String getSplits();
-  public abstract void setSplits(String splits);
+  public abstract ByteString getPrefetchingSplits();
+  public abstract void setPrefetchingSplits(ByteString splits);
+  
+  public abstract ByteString getCompletedSplits();
+  public abstract void setCompletedSplits(ByteString splits);
 }

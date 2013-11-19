@@ -65,6 +65,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.SchedulerEventType;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.im.InMemoryScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ApplicationTokenSecretManager;
 import org.apache.hadoop.yarn.server.resourcemanager.security.ClientToAMTokenSecretManagerInRM;
 import org.apache.hadoop.yarn.server.resourcemanager.security.DelegationTokenRenewer;
@@ -113,7 +114,6 @@ public class ResourceManager extends CompositeService implements Recoverable {
   private ClientRMService clientRM;
   protected ApplicationMasterService masterService;
   private ApplicationMasterLauncher applicationMasterLauncher;
-  private InMemoryManager inMemoryManager;
   private AdminService adminService;
   private ContainerAllocationExpirer containerAllocationExpirer;
   protected NMLivelinessMonitor nmLivelinessMonitor;
@@ -126,6 +126,7 @@ public class ResourceManager extends CompositeService implements Recoverable {
   protected RMContext rmContext;
   protected ResourceTrackerService resourceTracker;
   private boolean recoveryEnabled;
+  private boolean isInMemoryEnabled;
 
   private Configuration conf;
   
@@ -233,10 +234,13 @@ public class ResourceManager extends CompositeService implements Recoverable {
     addService(masterService) ;
     
     // Register InMemoryManager
-    this.inMemoryManager = new InMemoryManager(rmContext, masterService);
-    this.masterService.setInMemoryManager(this.inMemoryManager);
-    this.resourceTracker.setInMemoryManager(this.inMemoryManager);
-    addService(inMemoryManager);
+    isInMemoryEnabled = conf.getBoolean(
+    		YarnConfiguration.IM_ENABLED,
+    		YarnConfiguration.DEFAULT_IM_ENABLED);
+    LOG.error("@_@ RM: prefetch enabled=" + isInMemoryEnabled + "->" + YarnConfiguration.IM_ENABLED);
+    if (this.isInMemoryEnabled) {
+    		this.resourceTracker.setScheduler(this.scheduler);
+    	}
 
     this.applicationACLsManager = new ApplicationACLsManager(conf);
 
@@ -656,11 +660,6 @@ public class ResourceManager extends CompositeService implements Recoverable {
         resourceTrackerService);
   }
   
-  protected InMemoryManager createInMemoryManager(
-	  ApplicationMasterService masterService) {
-	  return new InMemoryManager(this.rmContext, this.masterService);
-  }
-
   @Private
   public ClientRMService getClientRMService() {
     return this.clientRM;
