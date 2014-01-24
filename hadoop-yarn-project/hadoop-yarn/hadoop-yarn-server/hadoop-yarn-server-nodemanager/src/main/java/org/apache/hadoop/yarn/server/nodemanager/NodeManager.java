@@ -93,8 +93,8 @@ public class NodeManager extends CompositeService
   }
   
   protected InMemoryService createInMemoryService(Context context,
-	      Dispatcher dispatcher, NodeStatusUpdater statusUpdater, int prefetchWindow, int concurrency, boolean transfer) {
-	    return new InMemoryService(context, prefetchWindow, concurrency, transfer);
+	      Dispatcher dispatcher, NodeStatusUpdater statusUpdater, int prefetchTasks, int prefetchWindow, int concurrency, boolean transfer) {
+	    return new InMemoryService(context, prefetchTasks, prefetchWindow, concurrency, transfer);
 	  }
 
   protected NodeStatusUpdater createNodeStatusUpdater(Context context,
@@ -206,11 +206,14 @@ public class NodeManager extends CompositeService
     		int concurrency = 
     			conf.getInt(YarnConfiguration.IM_PREFETCH_CONCURRENCY,
     	    			YarnConfiguration.DEFAULT_IM_PREFETCH_CONCURRENCY);
+    		int prefetchTasks = 
+        			conf.getInt(YarnConfiguration.IM_PREFETCH_TASKS,
+        				YarnConfiguration.DEFAULT_IM_PREFETCH_TASKS);
     		boolean transfer = 
         			conf.getBoolean(YarnConfiguration.IM_PREFETCH_TRANSFER,
         	    			YarnConfiguration.DEFAULT_IM_PREFETCH_TRANSFER);
-    		LOG.error("@@ NM: prefetching window=" + prefetchWindow + ", concurrency=" + concurrency + ", transfer=" + transfer);
-    		this.inMemorySerrvice = createInMemoryService(context, dispatcher, nodeStatusUpdater, prefetchWindow, concurrency, transfer);
+    		LOG.error("@@ NM: prefetching window=" + prefetchWindow + ", concurrency=" + concurrency + ", tasks=" + prefetchTasks + ", transfer=" + transfer);
+    		this.inMemorySerrvice = createInMemoryService(context, dispatcher, nodeStatusUpdater, prefetchTasks, prefetchWindow, concurrency, transfer);
     		addService(this.inMemorySerrvice);
     		((NodeStatusUpdaterImpl)nodeStatusUpdater).setInMemoryService(this.inMemorySerrvice);
     		((ContainerManagerImpl)containerManager).setInMemoryService(this.inMemorySerrvice);

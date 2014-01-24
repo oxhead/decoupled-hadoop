@@ -60,6 +60,7 @@ public class RawLocalFileSystem extends FileSystem {
   private Path workingDir;
   private boolean isPrefetchEnabled;
   private boolean isPrefetchInputStreamEnabled;
+  private String prefetchDirPath;
   
   public RawLocalFileSystem() {
     workingDir = getInitialWorkingDirectory();
@@ -91,7 +92,8 @@ public class RawLocalFileSystem extends FileSystem {
     setConf(conf);
     isPrefetchEnabled = getConf().getBoolean("yarn.inmemory.enabled", false);
     isPrefetchInputStreamEnabled = getConf().getBoolean("yarn.inmemory.prefetch.inputstream.enabled", false);
-    LOG.error("@@ FS: prefetch enabled=" + isPrefetchEnabled + ", prefetch inputstream enabled=" + isPrefetchInputStreamEnabled);
+    prefetchDirPath = getConf().get("yarn.inmemory.prefetch.dir", "/dev/shm/hadoop");
+    LOG.error("@@ FS: prefetch enabled=" + isPrefetchEnabled + ", prefetch inputstream enabled=" + isPrefetchInputStreamEnabled + ", prefetch dir=" + prefetchDirPath);
   }
   
   class TrackingFileInputStream extends FileInputStream {
@@ -257,7 +259,7 @@ public class RawLocalFileSystem extends FileSystem {
 	    private RandomAccessFile currentProgress;
 	    private long nextReadBoundary;
 	    private int blockSize = 64*1024*1024;
-	    private File prefetchDir = new File("/dev/shm/hadoop");
+	    private File prefetchDir = new File(prefetchDirPath);
 	    private Path f;
 	    private long blockReadCount;
 	    private MappedByteBuffer currentRecord;

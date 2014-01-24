@@ -971,14 +971,24 @@ public class InMemoryScheduler implements ResourceScheduler, Configurable {
 			LOG.error("@@ IMM: update prefetch window -> node=" + nodeId + ", window=" + nodeContext.availablePrefetchWindow + ", prefetch=" + this.prefetchQueue.size());
 		}
 
+		public int calcuateOptimalNumOfPrefetchTasks(int numOfPrefetchTasks, int numOfPrefetchWindow, int numOfNodes) {
+			return numOfPrefetchTasks / numOfNodes >= numOfPrefetchWindow ? numOfPrefetchWindow : (int) ((double) numOfPrefetchTasks / numOfNodes * numOfPrefetchWindow + 1);
+		}
+
 		public void askPrefetchTasks(NodeSplitContext nodeContext) {
 			synchronized (prefetchQueue) {
+				int numOfPrefetchTasks = prefetchQueue.size();
+				int numOfPrefetchWindow = nodeContext.availablePrefetchWindow;
+				int targetNumOfPrefetchTasks = calcuateOptimalNumOfPrefetchTasks(numOfPrefetchTasks, numOfPrefetchWindow, nodeRecord.size());
+				targetNumOfPrefetchTasks = Math.min(targetNumOfPrefetchTasks, numOfPrefetchWindow);
+				int count = 0;
 				Iterator<SplitContext> iterator = this.prefetchQueue.iterator();
-				while (iterator.hasNext() && nodeContext.hasAvailablePrefetchWindow()) {
+				while (count < targetNumOfPrefetchTasks && iterator.hasNext() && nodeContext.hasAvailablePrefetchWindow()) {
 					SplitContext splitContext = iterator.next();
 					LOG.error("@@ IMM: add prefetching task -> task=" + splitContext.pi.taskId + ", node=" + nodeContext.nodeId);
 					assignPrefetchTaskToNode(splitContext, nodeContext);
 					iterator.remove();
+					count++;
 				}
 			}
 		}

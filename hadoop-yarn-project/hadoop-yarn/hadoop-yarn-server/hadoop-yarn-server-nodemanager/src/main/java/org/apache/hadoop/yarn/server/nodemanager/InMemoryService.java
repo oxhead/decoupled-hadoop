@@ -26,15 +26,16 @@ import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -56,7 +57,6 @@ public class InMemoryService extends CompositeService {
 	private File prefetchDir;
 
 	private Timer timer;
-	private ExecutorService prefetchService;
 	private NetworkMonitor networkMonitor;
 
 	// prefetching task queue
@@ -65,14 +65,13 @@ public class InMemoryService extends CompositeService {
 	private List<PrefetchInfo> prefetchingList = new LinkedList<PrefetchInfo>();
 	// task completed prefetching
 	private List<PrefetchInfo> completedPrefetchList = new LinkedList<PrefetchInfo>();
-	
+
 	// record to be pulled
 	private List<PrefetchInfo> completedPrefetchRecord = new LinkedList<PrefetchInfo>();
 
-	private Map<PrefetchInfo, PrefetchWorker> workers = new HashMap<PrefetchInfo, InMemoryService.PrefetchWorker>();
-
 	private Queue<Token> tokenQueue = new LinkedList<InMemoryService.Token>();
 
+	private int prefetchTasks;
 	private int prefetchWindow;
 	private int prefetchConcurrency;
 	private boolean prefetchTransfer;
@@ -82,13 +81,17 @@ public class InMemoryService extends CompositeService {
 	private int tokenSize;
 	private long tokenInterval;
 
-	public InMemoryService(Context context, int prefetchWindow, int concurrency, boolean transfer) {
+	TrafficController controller;
+
+	public InMemoryService(Context context, int prefetchTasks, int prefetchWindow, int concurrency, boolean transfer) {
 		super(InMemoryService.class.getName());
 		this.context = context;
+		// number of slots
+		this.prefetchTasks = prefetchTasks;
 		this.prefetchWindow = prefetchWindow;
 		this.prefetchConcurrency = concurrency;
 		this.prefetchTransfer = transfer;
-		prefetchService = Executors.newFixedThreadPool(prefetchConcurrency);
+		controller = new TrafficController(this.prefetchTasks, this.prefetchConcurrency);
 		networkMonitor = new NetworkMonitor();
 		timer = new Timer();
 	}
@@ -97,10 +100,10 @@ public class InMemoryService extends CompositeService {
 	public void init(Configuration conf) {
 		super.init(conf);
 		LOG.error("@@ IMS: initialize");
-		prefetchDir = new File("/dev/shm/hadoop");
+		prefetchDir = new File(conf.get(YarnConfiguration.IM_PREFETCH_DIR, YarnConfiguration.DEFAULT_IM_PREFETCH_DIR));
 		prefetchDir.mkdirs();
 		networkMonitor.init();
-		blockSize = conf.getInt("fs.local.block.size", 64 * 2014 * 1024);
+		blockSize = conf.getInt("fs.local.block.size", 64 * 1024 * 1024);
 		LOG.error("@@ IMS: block size=" + blockSize);
 		tokenNumber = conf.getInt(YarnConfiguration.IM_TOKEN_NUMBER, YarnConfiguration.DEFAULT_IM_TOKEN_NUMBER);
 		tokenSize = conf.getInt(YarnConfiguration.IM_TOKEN_SIZE, YarnConfiguration.DEFAULT_IM_TOKEN_SIZE);
@@ -112,7 +115,7 @@ public class InMemoryService extends CompositeService {
 	public synchronized void start() {
 		LOG.error("@@ IMS: start service");
 		super.start();
-		networkMonitor.start();
+		// networkMonitor.start();
 		timer.scheduleAtFixedRate(new TimerTask() {
 			@Override
 			public void run() {
@@ -150,16 +153,15 @@ public class InMemoryService extends CompositeService {
 			return;
 		}
 		LOG.error("@@ IMS: has available window for prefetching");
-		for (; getAvailableWindow() > 0 && prefetchQueue.size() > 0;) {
+		for (; getAvailableWindow() > 0 && prefetchQueue.size() > 0 && controller.canSubmitTask();) {
 			PrefetchInfo pi = prefetchQueue.poll();
 			prefetchingList.add(pi);
 			if (this.prefetchTransfer) {
 				LOG.error("@@ IMS: dispatch prefetching task -> " + pi);
-				PrefetchWorker pw = new PrefetchWorker(pi);
+				TransferTask task = new TransferTask(pi, prefetchDir, 64 * 2014);
 				LOG.error("@@ IMS: ready to initialize prefetch worker -> task=" + pi.taskId);
-				pw.init();
-				prefetchService.submit(pw);
-				workers.put(pi, pw);
+				task.init();
+				controller.submitNewTransferTask(task);
 			} else {
 				reportPrefetchProgress(pi);
 			}
@@ -192,8 +194,9 @@ public class InMemoryService extends CompositeService {
 		LOG.error("IMS: revoke prefetch task: node=" + this.context.getNodeId() + ", task=" + pi.taskId);
 		// TODO: make sure these are the only things to delete
 		// Have to delete in real system
-		//File prefetchFile = getPrefetchFile(pi);
-		//LOG.error("IMS: delete prefetch file -> file=" + prefetchFile.getPath() + ", delte=" + prefetchFile.delete());
+		// File prefetchFile = getPrefetchFile(pi);
+		// LOG.error("IMS: delete prefetch file -> file=" +
+		// prefetchFile.getPath() + ", delte=" + prefetchFile.delete());
 		completedPrefetchList.remove(pi);
 		prefetchingList.remove(pi);
 	}
@@ -203,24 +206,6 @@ public class InMemoryService extends CompositeService {
 		LOG.error("@@ IMS: report prefetching split -> " + pi);
 		pi.progress = pi.fileLength;
 		completedPrefetchRecord.add(pi);
-	}
-
-	public String convertFilePath(String filePath) {
-		return filePath.replace("file:", "");
-	}
-
-	public File getPrefetchProgressFile(PrefetchInfo pi) {
-		String filePath = convertFilePath(pi.file);
-		File inputFile = new File(filePath);
-		File prefetchOutputFile = new File(this.prefetchDir, inputFile.getName() + "." + pi.fileLength + "." + pi.fileOffset + ".progress");
-		return prefetchOutputFile;
-	}
-
-	public File getPrefetchFile(PrefetchInfo pi) {
-		String filePath = convertFilePath(pi.file);
-		File inputFile = new File(filePath);
-		File prefetchOutputFile = new File(this.prefetchDir, inputFile.getName() + "." + pi.fileLength + "." + pi.fileOffset);
-		return prefetchOutputFile;
 	}
 
 	public synchronized Token getDownloadToken(PrefetchInfo pi) {
@@ -256,20 +241,83 @@ public class InMemoryService extends CompositeService {
 
 	}
 
-	class PrefetchWorker extends Thread {
+	/**
+	 * Round-robing prefetching
+	 * 
+	 * @author oxhead
+	 * 
+	 */
+	class TrafficController extends ThreadPoolExecutor {
+
+		int numOfTask;
+		int numOfWorker;
+		AtomicInteger numOfActiveTasks;
+
+		public TrafficController(int numOfTask, int numOfWorker) {
+			super(numOfWorker, numOfTask, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+			this.numOfTask = numOfTask;
+			this.numOfWorker = numOfWorker;
+			numOfActiveTasks = new AtomicInteger(0);
+		}
+
+		@Override
+		protected void afterExecute(Runnable arg0, Throwable arg1) {
+			super.afterExecute(arg0, arg1);
+			TransferTask task = (TransferTask) arg0;
+			LOG.error("Controller: post execution");
+			if (arg1 == null) {
+				reportCompleteTask(task);
+			}
+		}
+
+		public void submitNewTransferTask(TransferTask task) {
+			LOG.error("Controller: submit a new task -> " + task.split.taskId);
+			this.numOfActiveTasks.incrementAndGet();
+			execute(task);
+		}
+
+		public boolean canSubmitTask() {
+			return this.numOfActiveTasks.intValue() < this.numOfTask;
+		}
+
+		public void reportCompleteTask(TransferTask task) {
+			LOG.error("Controller: report complete task -> " + task.split.taskId);
+			if (task.hasRemaining()) {
+				LOG.error("Controller: has remaing parts -> " + task.split.taskId);
+				execute(task);
+			} else {
+				this.numOfActiveTasks.decrementAndGet();
+			}
+		}
+
+	}
+
+	class TransferTask implements Runnable {
 
 		private PrefetchInfo split;
+		private File prefetchDir;
 		private File progressFile;
 		private File prefetchFile;
 		private RandomAccessFile progressRecord;
 		private RandomAccessFile prefetchRecord;
 		private FileChannel prefetchFileChannel;
 
-		int sizeOfByteBuffer = 8192;
-		int sizeOfBuffer = 1024;
+		long elapsedTime;
+		long progress;
 
-		public PrefetchWorker(PrefetchInfo split) {
+		int sizeOfBuffer = 8192;
+		int lenPerTime;
+		int prefetchCount = 0;
+		int targetCount = -1;
+		boolean isEOF;
+
+		byte[] barray = new byte[sizeOfBuffer];
+		ByteBuffer bb = ByteBuffer.wrap(barray);
+
+		public TransferTask(PrefetchInfo split, File prefetchDir, int lenPerTime) {
 			this.split = split;
+			this.prefetchDir = prefetchDir;
+			this.lenPerTime = lenPerTime;
 		}
 
 		public void init() {
@@ -278,6 +326,34 @@ public class InMemoryService extends CompositeService {
 			this.prefetchFile = getPrefetchFile(this.split);
 			this.initializeProgressFile();
 			this.initializePrefetchFile();
+			isEOF = false;
+			targetCount = split.fileLength;
+
+			try {
+				prefetchFileChannel = new FileInputStream(new File(convertFilePath(split.file))).getChannel();
+				prefetchFileChannel.position(split.fileOffset);
+				this.prefetchRecord.seek(0);
+			} catch (IOException ex) {
+				LOG.error("Fail to open input stream");
+			}
+		}
+
+		public String convertFilePath(String filePath) {
+			return filePath.replace("file:", "");
+		}
+
+		public File getPrefetchProgressFile(PrefetchInfo pi) {
+			String filePath = convertFilePath(pi.file);
+			File inputFile = new File(filePath);
+			File prefetchOutputFile = new File(this.prefetchDir, inputFile.getName() + "." + pi.fileLength + "." + pi.fileOffset + ".progress");
+			return prefetchOutputFile;
+		}
+
+		public File getPrefetchFile(PrefetchInfo pi) {
+			String filePath = convertFilePath(pi.file);
+			File inputFile = new File(filePath);
+			File prefetchOutputFile = new File(this.prefetchDir, inputFile.getName() + "." + pi.fileLength + "." + pi.fileOffset);
+			return prefetchOutputFile;
 		}
 
 		private void initializeProgressFile() {
@@ -312,69 +388,41 @@ public class InMemoryService extends CompositeService {
 
 		@Override
 		public void run() {
+			LOG.error("Worker: perform -> " + this.split.taskId);
 			try {
-				LOG.error("[" + this.split.taskId + "] PW: start to prefetch");
-				String filePath = convertFilePath(split.file);
-				File inputFile = new File(filePath);
-				FileInputStream fis = new FileInputStream(inputFile);
-				FileChannel fc = fis.getChannel();
-				fc.position(split.fileOffset);
+				int readCount = 0;
 
-				LOG.error("[" + this.split.taskId + "] PW: create mapped byte buffer, remaing=" + fc.size());
-				LOG.error("[" + this.split.taskId + "] PW: start to prefetch -> task=" + split.taskId + ", read_path=" + inputFile.getPath() + ", write_path=" + this.prefetchFile.getPath());
-
-				ByteBuffer bb = ByteBuffer.allocateDirect(sizeOfByteBuffer);
-				byte[] barray = new byte[sizeOfBuffer];
-
-				this.prefetchRecord.seek(0);
-
-				int nRead, nGet;
-				int prefetchCount = 0;
-				long targetCount = fc.position() + blockSize < fc.size() ? blockSize : fc.size() - fc.position();
-				boolean isEOF = false;
-				long timeStart = System.nanoTime();
-				while (prefetchCount < targetCount && !isEOF) {
-					LOG.error("[" + this.split.taskId + "] PW: prefetch_count=" + prefetchCount + ", target_count=" + targetCount);
-					Token token = getDownloadToken(this.split);
-					LOG.error("[" + this.split.taskId + "] PW: get download token=" + token);
-					while (token.hasAvailableValue()) {
-						nRead = fc.read(bb);
-						if (nRead == -1) {
-							isEOF = true;
-							break;
-						} else if (nRead == 0) {
-							continue;
-						}
-						token.use(nRead);
-						bb.position(0);
-						bb.limit(nRead);
-						while (bb.hasRemaining()) {
-							//LOG.error("[" + this.split.taskId + "] PW: remaining=" + bb.remaining());
-							nGet = Math.min(bb.remaining(), sizeOfBuffer);
-							bb.get(barray, 0, nGet);
-							//LOG.error("[" + this.split.taskId + "] PW: read data to array -> " + this.split.taskId);
-							this.prefetchRecord.write(barray, 0, nGet);
-							//LOG.error("[" + this.split.taskId + "] PW: write array to file -> " + this.split.taskId);
-							prefetchCount += nGet;
-						}
+				while (readCount < lenPerTime && prefetchCount < targetCount && !isEOF) {
+					LOG.error("Worker: readCount=" + readCount + ", prefetchCount=" + prefetchCount + ", lenPerTime=" + lenPerTime + ", targetCount=" + targetCount + ", EOF=" + isEOF);
+					int nRead = prefetchFileChannel.read(bb);
+					if (nRead == -1) {
+						isEOF = true;
+					} else {
+						this.prefetchRecord.write(barray, 0, nRead);
+						prefetchCount += nRead;
+						readCount += nRead;
 						bb.clear();
-						// update progreee per 8K read
-						updateProgressFile(prefetchCount);
 					}
 				}
-				long timeEnd = System.nanoTime();
-				LOG.error("[" + this.split.taskId + "] PW: prefetching time=" + (timeEnd - timeStart) + ", amount=" + prefetchCount);
+				if (readCount > 0) {
+					updateProgressFile(prefetchCount);
+				}
+			} catch (Exception ex) {
+				LOG.error("Fail to prefetch data", ex);
+			}
+		}
 
-				fc.close();
-				fis.close();
-				
+		public boolean hasRemaining() {
+			return !isEOF && prefetchCount < targetCount;
+		}
+
+		public void complete() {
+			try {
 				this.prefetchRecord.setLength(prefetchCount);
 				this.prefetchRecord.close();
-				this.progressRecord.close();
 				reportPrefetchProgress(split);
-				LOG.error("[" + this.split.taskId + "] PW: finish to prefetch file: " + split);
 			} catch (Exception ex) {
-				LOG.error("[" + this.split.taskId + "] PW: read nfs file failed ->" + ex);
+				LOG.error("Unable to complete prefetching task");
 			}
 		}
 	}
@@ -404,7 +452,7 @@ public class InMemoryService extends CompositeService {
 
 				@Override
 				public void run() {
-					//probe();
+					// probe();
 				}
 			}, 0L, probeInterval);
 

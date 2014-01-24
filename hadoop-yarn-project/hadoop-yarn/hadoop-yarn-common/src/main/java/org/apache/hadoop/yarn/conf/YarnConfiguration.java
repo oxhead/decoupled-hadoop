@@ -90,10 +90,14 @@ public class YarnConfiguration extends Configuration {
   
   public static final String IM_ENABLED = IM_PREFIX + "enabled";
   public static final boolean DEFAULT_IM_ENABLED = false;
+  public static final String IM_PREFETCH_DIR = IM_PREFIX + "prefetch.dir";
+  public static final String DEFAULT_IM_PREFETCH_DIR = "/dev/shm/hadoop";
   public static final String IM_PREFETCH_WINDOW = IM_PREFIX + "prefetch.window";
   public static final int DEFAULT_IM_PREFETCH_WINDOW = 8;
   public static final String IM_PREFETCH_CONCURRENCY = IM_PREFIX + "prefetch.concurrency";
   public static final int DEFAULT_IM_PREFETCH_CONCURRENCY = 8;
+  public static final String IM_PREFETCH_TASKS = IM_PREFIX + "prefetch.tasks";
+  public static final int DEFAULT_IM_PREFETCH_TASKS = 8;
   public static final String IM_PREFETCH_TRANSFER = IM_PREFIX + "prefetch.transfer";
   public static final boolean DEFAULT_IM_PREFETCH_TRANSFER = true;
   public static final String IM_TOKEN_NUMBER = IM_PREFIX + "token.number";
