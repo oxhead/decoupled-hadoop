@@ -65,6 +65,7 @@ public class ExampleDriver {
       pgd.addClass("teragen", TeraGen.class, "Generate data for the terasort");
       pgd.addClass("terasort", TeraSort.class, "Run the terasort");
       pgd.addClass("teravalidate", TeraValidate.class, "Checking results of terasort");
+      pgd.addClass("custommap", CustomMap.class, "A map-only job with stress workload per bytes");
       exitCode = pgd.driver(argv);
     }
     catch(Throwable e){
