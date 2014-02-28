@@ -843,10 +843,10 @@ public abstract class Storage extends StorageInfo {
             item + ". Not formatting.");
         return false;
       }
-      if (!ToolRunner.confirmPrompt("Re-format filesystem in " + item + " ?")) {
-        System.err.println("Format aborted in " + item);
-        return false;
-      }
+      //if (!ToolRunner.confirmPrompt("Re-format filesystem in " + item + " ?")) {
+      //  System.err.println("Format aborted in " + item);
+      //  return false;
+      //}
     }
     
     return true;
