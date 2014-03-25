@@ -58,7 +58,8 @@ class FlowSchedulerPage extends RmView {
         _("Used Node Capacity:" , Integer.toString(sinfo.getUsedNodeCapacity())).
         _("Available Node Capacity:" , Integer.toString(sinfo.getAvailNodeCapacity())).
         _("Total Node Capacity:" , Integer.toString(sinfo.getTotalNodeCapacity())).
-        _("Number of Node Containers:" , Integer.toString(sinfo.getNumContainers()));
+        _("Number of Node Containers:" , Integer.toString(sinfo.getNumContainers())).
+        _("Assignment Model", sinfo.getAssignmentModel());
 
       html._(InfoBlock.class);
     }

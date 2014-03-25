@@ -52,7 +52,6 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptE
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptState;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerEventType;
-import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerState;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeCleanContainerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ActiveUsersManager;
@@ -179,6 +178,10 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		return maximumAllocation;
 	}
 
+	public String getAssignmentMode() {
+		return ((FlowSchedulerConfiguration) getConf()).getAssignmentModel();
+	}
+
 	@Override
 	public synchronized void reinitialize(Configuration conf, RMContext rmContext) throws IOException {
 		FlowSchedulerConfiguration newConf = new FlowSchedulerConfiguration(conf);
@@ -201,7 +204,7 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 				@Override
 				public void run() {
 					try {
-						printStatus();
+						//printStatus();
 						updateFlowNetwork();
 					} catch (Throwable t) {
 						LOG.fatal("MinCostFlow module worked abnormally!!!", t);
@@ -782,6 +785,8 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		if (tasks.size() == 0) {
 			LOG.fatal("[Scheduler] no more tasks to scheduel");
 			return;
+		} else {
+			LOG.fatal("[Scheduler] unscheduled tasks: " + tasks.size());
 		}
 
 		String modelName = ((FlowSchedulerConfiguration) getConf()).getAssignmentModel();
@@ -795,6 +800,9 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 		} else if (modelName.equals("Bulk")) {
 			model = new BulkModel(nodes, tasks);
 			LOG.fatal("[Assignment] model: Bulk Model");
+		} else if (modelName.endsWith("Color")) {
+			model = new ColorModel(nodes, tasks);
+			LOG.fatal("[Assignment] model: Color Model");
 		} else {
 			model = new MinCostFlowModel(nodes, storageNodes, tasks, solver);
 			LOG.fatal("[Assignment] model: Min Cost Flow Model");

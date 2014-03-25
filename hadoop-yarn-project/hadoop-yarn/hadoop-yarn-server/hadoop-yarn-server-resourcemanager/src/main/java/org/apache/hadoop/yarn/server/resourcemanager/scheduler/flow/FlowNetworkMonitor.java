@@ -234,7 +234,7 @@ public class FlowNetworkMonitor {
 	class FlowNetworkNode {
 
 		// TODO: smart approach here
-		private final static int MIN_SLOT_MEMORY = 512;
+		private final static int MIN_SLOT_MEMORY = 1024;
 		double capacity;
 		FiCaSchedulerNode node;
 		List<FlowNetworkTask> launchedTasks = new LinkedList<FlowNetworkTask>();
@@ -304,6 +304,14 @@ public class FlowNetworkMonitor {
 
 		public double getSlotCapability() {
 			return this.slot_capability;
+		}
+
+		public double getLoad() {
+			double sumOfLoad = 0;
+			for (FlowNetworkTask task : this.launchedTasks) {
+				sumOfLoad += task.flowRate.flowIn;
+			}
+			return sumOfLoad;
 		}
 
 		// non-linear load calculation CPU-bound vs. network-bound
@@ -549,10 +557,12 @@ public class FlowNetworkMonitor {
 						for (int i = 0; i < request.getNumContainers(); i++) {
 							int slot = getTaskSlot(request);
 							FlowNetworkStorage storage = null;
+							// TODO: combine the modificaiton of prefetching
 							// hava a big problem here...
 							// storage = lookupStorage(host);
-							storage = randomStorage();
-							FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, myApp, storage, priority);
+							// storage = randomStorage();
+							// TODO: null for quick fix
+							FlowNetworkTask task = new FlowNetworkTask(Type.Map, flowRate, slot, myApp, null, priority);
 							unscheduledTasks.add(task);
 						}
 

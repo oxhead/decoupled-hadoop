@@ -47,6 +47,8 @@ public class FlowSchedulerInfo extends SchedulerInfo {
   protected int availNodeCapacity;
   protected int totalNodeCapacity;
   protected int numContainers;
+  
+  protected String assignmentModel;
 
   @XmlTransient
   protected String qstateFormatted;
@@ -76,6 +78,8 @@ public class FlowSchedulerInfo extends SchedulerInfo {
     this.availNodeCapacity = 0;
     this.totalNodeCapacity = 0;
     this.numContainers = 0;
+    
+    this.assignmentModel = fs.getAssignmentMode();
 
     for (RMNode ni : rmContext.getRMNodes().values()) {
       SchedulerNodeReport report = fs.getNodeReport(ni.getNodeID());
@@ -128,6 +132,10 @@ public class FlowSchedulerInfo extends SchedulerInfo {
 
   public float getUsedCapacity() {
     return this.usedCapacity;
+  }
+  
+  public String getAssignmentModel() {
+	  return this.assignmentModel;
   }
 
 }

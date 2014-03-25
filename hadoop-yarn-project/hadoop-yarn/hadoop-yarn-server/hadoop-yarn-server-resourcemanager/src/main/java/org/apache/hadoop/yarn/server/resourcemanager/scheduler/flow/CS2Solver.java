@@ -16,6 +16,12 @@ import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.MinCostFlowM
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.MinCostFlowModel.Network;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.MinCostFlowModel.Node;
 
+/**
+ * http://www.igsystems.com/cs2/index.html
+ * Must disable PRINT_ANS in MAKEFILE
+ * @author oxhead
+ *
+ */
 public class CS2Solver implements NetworkFlowSolver {
 
 	private static final Log LOG = LogFactory.getLog(CS2Solver.class);
@@ -31,6 +37,7 @@ public class CS2Solver implements NetworkFlowSolver {
 		LOG.fatal("[Solver] CS2");
 		long start_time = System.currentTimeMillis();
 		File inputFile = createInputFile(networkModel);
+		LOG.fatal("CS2Solver: " + solverPath);
 		List<String> resultList = executeCmd(solverPath, inputFile);
 		long end_time = System.currentTimeMillis();
 		LOG.fatal("[Solver] running Time = " + (end_time - start_time) / 1000.0);
@@ -43,7 +50,7 @@ public class CS2Solver implements NetworkFlowSolver {
 	private File createInputFile(Network net) {
 		try {
 			File inputFile = File.createTempFile("flow_", ".inp");
-			inputFile.deleteOnExit();
+			//inputFile.deleteOnExit();
 			LOG.fatal("[Solver] input file: " + inputFile.getPath());
 			BufferedWriter writer = new BufferedWriter(new FileWriter(inputFile));
 
@@ -114,6 +121,7 @@ public class CS2Solver implements NetworkFlowSolver {
 
 		} catch (Exception ex) {
 			ex.printStackTrace();
+			LOG.fatal("Unable to solve the min-cost flow network problem", ex);
 		}
 
 		return resultList;

@@ -76,6 +76,7 @@ public class Grep extends Configured implements Tool {
 
       grepJob.waitForCompletion(true);
 
+      /**
       Job sortJob = new Job(conf);
       sortJob.setJobName("grep-sort");
 
@@ -90,6 +91,7 @@ public class Grep extends Configured implements Tool {
         LongWritable.DecreasingComparator.class);
 
       sortJob.waitForCompletion(true);
+      */
     }
     finally {
       FileSystem.get(conf).delete(tempDir, true);

@@ -13,7 +13,7 @@ function deploy() {
         ssh $user@$node bash $deploy_script
 }
 
-for (( i=1; i<=6; i++ )); do
+for (( i=2; i<=6; i++ )); do
 	node="power$i.csc.ncsu.edu"
 	deploy $node
 done

@@ -20,6 +20,7 @@ package org.apache.hadoop.examples;
 
 import org.apache.hadoop.examples.dancing.DistributedPentomino;
 import org.apache.hadoop.examples.dancing.Sudoku;
+import org.apache.hadoop.examples.my.Classification;
 import org.apache.hadoop.examples.pi.DistBbp;
 import org.apache.hadoop.examples.terasort.TeraGen;
 import org.apache.hadoop.examples.terasort.TeraSort;
@@ -66,6 +67,8 @@ public class ExampleDriver {
       pgd.addClass("terasort", TeraSort.class, "Run the terasort");
       pgd.addClass("teravalidate", TeraValidate.class, "Checking results of terasort");
       pgd.addClass("custommap", CustomMap.class, "A map-only job with stress workload per bytes");
+      pgd.addClass("nocomputation", NoComputation.class, "A map-only job with doing nothing");
+      pgd.addClass("classification", Classification.class, "A map-only job with stress workload per bytes");
       exitCode = pgd.driver(argv);
     }
     catch(Throwable e){

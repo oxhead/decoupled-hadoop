@@ -92,16 +92,13 @@ public class CustomMap {
 		job.getConfiguration().set(CONF_NUM_CPU_WORKERS, otherArgs[3]);
 		job.getConfiguration().set(CONF_NUM_VM_WORKERS, otherArgs[4]);
 		job.getConfiguration().set(CONF_NUM_VM_BYTES, otherArgs[5]);
+		job.setJobName(CustomMap.class.getCanonicalName() + "_" + otherArgs[2] + "_" + otherArgs[3] + "_" + otherArgs[4] + "_" + otherArgs[5]);
 
 		job.setJarByClass(CustomMap.class);
-
 		job.setMapperClass(WordMapper.class);
-
 		job.setNumReduceTasks(0);
-
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(Text.class);
-
 		job.setInputFormatClass(TextInputFormat.class);
 		FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
 		FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
