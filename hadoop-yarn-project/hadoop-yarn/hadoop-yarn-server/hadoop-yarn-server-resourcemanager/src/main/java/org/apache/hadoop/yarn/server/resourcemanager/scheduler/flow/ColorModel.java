@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
@@ -46,7 +47,8 @@ public class ColorModel implements AssignmentModel {
 	public List<Solution> solve() {
 
 		assignments.clear();
-
+		LOG.fatal("before) -----------------------------------");
+		taskStore.report();
 		// evenly distribution should be enough
 		while (nodeStore.hasNext() && taskStore.hasMoreAppMaster()) {
 			ColorNode node = nodeStore.next();
@@ -56,41 +58,32 @@ public class ColorModel implements AssignmentModel {
 			assignments.add(assignment);
 			node.assignTask(task);
 			LOG.fatal("@@ assign " + task + " to " + node);
+			nodeStore.update();
 		}
 
 		while (nodeStore.hasNext() && taskStore.hasMoreReduce()) {
 			ColorNode node = nodeStore.next();
 			ColorTask task = taskStore.nextReduce();
-			if (!node.willBeOverloaded(task)) {
-				node.assignTask(task);
-				Assignment assignment = new Assignment(task.task, node.node);
-				assignments.add(assignment);
-				LOG.fatal("@@ assign " + task + " to " + node);
-			} else {
-				if (node.isMostFree()) {
-					node.assignTask(task);
-					Assignment assignment = new Assignment(task.task, node.node);
-					assignments.add(assignment);
-					LOG.fatal("@@ assign " + task + " to " + node);
-				} else {
-					LOG.fatal("@@ Unable to assign " + task);
-				}
-			}
+			node.assignTask(task);
+			Assignment assignment = new Assignment(task.task, node.node);
+			assignments.add(assignment);
+			LOG.fatal("@@ assign " + task + " to " + node);
+			nodeStore.update();
 		}
 
 		// TODO: why too many tasks are added
 		while (nodeStore.hasNext() && taskStore.hasMoreMap()) {
 			ColorNode node = nodeStore.next();
 			ColorTask task = taskStore.nextMap();
-			if (!node.willBeOverloaded(task)) {
-				Assignment assignment = new Assignment(task.task, node.node);
-				assignments.add(assignment);
-				node.assignTask(task);
-				LOG.fatal("@@ assign " + task + " to " + node);
-			} else {
-				LOG.fatal("@@ Unable to assign " + task);
-			}
+			Assignment assignment = new Assignment(task.task, node.node);
+			assignments.add(assignment);
+			node.assignTask(task);
+			LOG.fatal("@@ assign " + task + " to " + node);
+			nodeStore.update();
 		}
+
+		LOG.fatal("after) -----------------------------------");
+		taskStore.report();
 
 		return new ArrayList<NetworkFlowSolver.Solution>();
 	}
@@ -102,44 +95,25 @@ public class ColorModel implements AssignmentModel {
 }
 
 class TaskStore {
-	// The map tasks in the queue will be ordered by job id
-	Comparator<ColorTask> mapTaskComparator = new Comparator<ColorTask>() {
+
+	Comparator<ColorTask> nonMapComparator = new Comparator<ColorTask>() {
 
 		@Override
 		public int compare(ColorTask o1, ColorTask o2) {
-			int result = o1.compareTo(o2);
+			int result = o1.task.app.app.getApplicationId().compareTo(o2.task.app.app.getApplicationId());
 			if (result == 0) {
-				return o1.task.app.app.getApplicationId().compareTo(o2.task.app.app.getApplicationId());
+				return o1.compareTo(o2);
+			} else {
+				return result;
 			}
-			return result;
-		}
-	};
-
-	Comparator<ColorTask> reduceTaskComparator = new Comparator<ColorTask>() {
-
-		@Override
-		public int compare(ColorTask o1, ColorTask o2) {
-			int result = o1.compareTo(o2);
-			if (result == 0) {
-				return o1.task.app.app.getApplicationId().compareTo(o2.task.app.app.getApplicationId());
-			}
-			return -result;
-		}
-	};
-
-	Comparator<ColorTask> appMasterTaskComparator = new Comparator<ColorTask>() {
-
-		@Override
-		public int compare(ColorTask o1, ColorTask o2) {
-			return o1.task.app.app.getApplicationId().compareTo(o2.task.app.app.getApplicationId());
 		}
 	};
 
 	private static final Log LOG = LogFactory.getLog(TaskStore.class);
 	Map<Double, TreeSet<ColorTask>> store = new HashMap<Double, TreeSet<ColorTask>>();
 
-	TreeSet<ColorTask> reduceQueue = new TreeSet<ColorTask>(reduceTaskComparator);
-	TreeSet<ColorTask> appMasterQueue = new TreeSet<ColorTask>(appMasterTaskComparator);
+	TreeSet<ColorTask> reduceQueue = new TreeSet<ColorTask>(nonMapComparator);
+	TreeSet<ColorTask> appMasterQueue = new TreeSet<ColorTask>(nonMapComparator);
 
 	PriorityQueue<Double> currentHeap = new PriorityQueue<Double>();
 	Double currentKey;
@@ -164,10 +138,12 @@ class TaskStore {
 			reduceQueue.add(colorTask);
 		} else {
 			if (!store.containsKey(colorTask.demand)) {
-				store.put(colorTask.demand, new TreeSet<ColorTask>(mapTaskComparator));
+				store.put(colorTask.demand, new TreeSet<ColorTask>());
 			}
 			TreeSet<ColorTask> set = store.get(colorTask.demand);
+			LOG.fatal("++ before: " + set.size());
 			set.add(colorTask);
+			LOG.fatal("++ after: " + set.size());
 		}
 
 	}
@@ -229,6 +205,17 @@ class TaskStore {
 	public ColorTask nextReduce() {
 		return reduceQueue.pollFirst();
 	}
+
+	public void report() {
+		LOG.fatal("Task store: appMaster=" + appMasterQueue.size());
+		LOG.fatal("Task store: reducers" + reduceQueue.size());
+		for (ColorTask task : reduceQueue) {
+			LOG.fatal("# reduce: " + task.demand + ", " + task.task.getName());
+		}
+		for (Entry<Double, TreeSet<ColorTask>> entry : this.store.entrySet()) {
+			LOG.fatal("Task store: map(" + entry.getKey() + ")=" + entry.getValue().size());
+		}
+	}
 }
 
 class NodeStore {
@@ -286,7 +273,18 @@ class ColorTask implements Comparable<ColorTask> {
 
 	@Override
 	public int compareTo(ColorTask o) {
-		return new Double(this.demand).compareTo(new Double(o.demand));
+		int result = new Double(this.demand).compareTo(new Double(o.demand));
+		if (result == 0) {
+			int subResult = this.task.app.app.getApplicationId().compareTo(o.task.app.app.getApplicationId());
+			if (subResult == 0) {
+				return new Integer(this.hashCode()).compareTo(o.hashCode());
+			} else {
+				return subResult;
+			}
+		} else {
+			return result;
+		}
+
 	}
 
 	@Override

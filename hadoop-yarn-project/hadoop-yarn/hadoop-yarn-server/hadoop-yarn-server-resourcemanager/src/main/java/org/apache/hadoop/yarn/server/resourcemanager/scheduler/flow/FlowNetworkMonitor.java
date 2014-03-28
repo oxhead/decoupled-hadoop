@@ -77,19 +77,9 @@ public class FlowNetworkMonitor {
 		LOG.fatal("[Network] add app: " + app.getApplicationAttemptId());
 
 		String appName = rmContext.getRMApps().get(app.getApplicationId()).getName();
-		Job job;
-		if (appName.contains("TeraSort")) {
-			job = FlowSchedulerConfiguration.Job.TERASORT;
-		} else if (appName.contains("word count")) {
-			job = FlowSchedulerConfiguration.Job.WORDCOUNT;
-		} else if (appName.contains("grep-search")) {
-			job = FlowSchedulerConfiguration.Job.GREP;
-		} else {
-			job = FlowSchedulerConfiguration.Job.DEFAULT;
-		}
 
-		FlowRate mapFlowRate = conf.getFlowRate(job, Type.Map);
-		FlowRate reduceFlowRate = conf.getFlowRate(job, Type.Reduce);
+		FlowRate mapFlowRate = conf.getFlowRate(appName, Type.Map);
+		FlowRate reduceFlowRate = conf.getFlowRate(appName, Type.Reduce);
 		FlowNetworkApp flowApp = new FlowNetworkApp(app, mapFlowRate, reduceFlowRate);
 
 		appMap.put(app, flowApp);
@@ -210,15 +200,7 @@ public class FlowNetworkMonitor {
 			flowRate = new FlowRate(0, 0);
 		} else {
 			String appName = rmContext.getRMApps().get(app.app.getApplicationId()).getName();
-			if (appName.contains("TeraSort")) {
-				flowRate = conf.getFlowRate(FlowSchedulerConfiguration.Job.TERASORT, type);
-			} else if (appName.contains("word count")) {
-				flowRate = conf.getFlowRate(FlowSchedulerConfiguration.Job.WORDCOUNT, type);
-			} else if (appName.contains("grep-search")) {
-				flowRate = conf.getFlowRate(FlowSchedulerConfiguration.Job.GREP, type);
-			} else {
-				flowRate = conf.getFlowRate(FlowSchedulerConfiguration.Job.DEFAULT, type);
-			}
+			flowRate = conf.getFlowRate(appName, type);
 		}
 		return flowRate;
 	}
@@ -359,10 +341,9 @@ public class FlowNetworkMonitor {
 				return mapFlowRate;
 			} else if (type.equals(Type.Reduce)) {
 				return reduceFlowRate;
-			} else if (type.equals(Type.AppMaster)) {
-				return new FlowRate(1, 1);
+			} else {
+				return new FlowRate(0, 0);
 			}
-			return conf.getFlowRate(Job.DEFAULT, type);
 		}
 
 		public void updateNumOfMapTasks(ResourceRequest request) {

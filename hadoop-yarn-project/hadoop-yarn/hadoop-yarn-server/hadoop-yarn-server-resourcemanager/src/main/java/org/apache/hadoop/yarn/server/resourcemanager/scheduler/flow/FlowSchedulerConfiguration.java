@@ -59,7 +59,10 @@ public class FlowSchedulerConfiguration extends Configuration {
 	public static final String FLOWRATE_GREP = PREFIX + "flowrate.grep";
 
 	@Private
-	public static final String FLOWRATE_NETWORKINTENSIVE = PREFIX + "flowrate.networkintensive";
+	public static final String FLOWRATE_NOCOMPUTATION = PREFIX + "flowrate.nocomputation";
+
+	@Private
+	public static final String FLOWRATE_CUSTOMMAP = PREFIX + "flowrate.custommap";
 
 	@Private
 	public static final String FLOWRATE_DEFAULT = PREFIX + "flowrate.default";
@@ -77,7 +80,7 @@ public class FlowSchedulerConfiguration extends Configuration {
 	}
 
 	public enum Job {
-		TERASORT, WORDCOUNT, GREP, NETWORKINTENSIVE, DEFAULT
+		TERASORT, WORDCOUNT, GREP, NOCOMPUTATION, DEFAULT
 	}
 
 	public String getSolverPath() {
@@ -86,6 +89,48 @@ public class FlowSchedulerConfiguration extends Configuration {
 
 	public String getAssignmentModel() {
 		return get(ASSIGNMENT_MODEL);
+	}
+
+	public FlowRate getFlowRate(String jobName, Type type) {
+		String[] flowRateString;
+
+		if (jobName.contains("TeraSort")) {
+			flowRateString = getStrings(FLOWRATE_TERASORT);
+		} else if (jobName.contains("word count")) {
+			flowRateString = getStrings(FLOWRATE_WORDCOUNT);
+		} else if (jobName.contains("grep-search")) {
+			flowRateString = getStrings(FLOWRATE_GREP);
+		} else if (jobName.contains("nocomputation")) {
+			flowRateString = getStrings(FLOWRATE_NOCOMPUTATION);
+		} else if (jobName.contains("CustomMap")) {
+			if (jobName.contains("CustomMap_1")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1");
+			} else if (jobName.contains("CustomMap_2")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".2");
+			} else if (jobName.contains("CustomMap_3")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".3");
+			} else if (jobName.contains("CustomMap_4")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".4");
+			} else if (jobName.contains("CustomMap_5")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".5");
+			} else if (jobName.contains("CustomMap_6")) {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".6");
+			} else {
+				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1");
+			}
+		} else {
+			flowRateString = getStrings(FLOWRATE_DEFAULT);
+		}
+
+		FlowRate flowRate;
+		if (type.equals(Type.Map)) {
+			flowRate = new FlowRate(Double.parseDouble(flowRateString[0]), Double.parseDouble(flowRateString[1]));
+		} else {
+			flowRate = new FlowRate(Double.parseDouble(flowRateString[2]), Double.parseDouble(flowRateString[3]));
+		}
+
+		return flowRate;
+
 	}
 
 	public FlowRate getFlowRate(Job job, Type type) {
@@ -98,8 +143,8 @@ public class FlowSchedulerConfiguration extends Configuration {
 			flowRateString = getStrings(FLOWRATE_WORDCOUNT);
 		} else if (job.equals(Job.GREP)) {
 			flowRateString = getStrings(FLOWRATE_GREP);
-		} else if (job.equals(Job.NETWORKINTENSIVE)) {
-			flowRateString = getStrings(FLOWRATE_NETWORKINTENSIVE);
+		} else if (job.equals(Job.NOCOMPUTATION)) {
+			flowRateString = getStrings(FLOWRATE_NOCOMPUTATION);
 		} else {
 			flowRateString = getStrings(FLOWRATE_DEFAULT);
 		}

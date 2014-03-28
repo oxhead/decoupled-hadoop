@@ -62,6 +62,7 @@ public class CustomMap {
 
 				Process child = Runtime.getRuntime().exec(commands);
 			} catch (Exception ex) {
+				ex.printStackTrace();
 			}
 		}
 
