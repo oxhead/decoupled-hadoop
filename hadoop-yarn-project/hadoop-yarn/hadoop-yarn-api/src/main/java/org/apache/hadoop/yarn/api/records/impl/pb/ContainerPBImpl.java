@@ -50,6 +50,7 @@ public class ContainerPBImpl extends ProtoBase<ContainerProto> implements Contai
   private Priority priority = null;
   private ContainerToken containerToken = null;
   private ContainerStatus containerStatus = null;
+  private String allocationHint = null;
   
   public ContainerPBImpl() {
     builder = ContainerProto.newBuilder();
@@ -280,6 +281,27 @@ public class ContainerPBImpl extends ProtoBase<ContainerProto> implements Contai
       builder.clearContainerStatus();
     this.containerStatus = containerStatus;
   }
+  
+  @Override
+  public String getAllocationHint() {
+    ContainerProtoOrBuilder p = viaProto ? proto : builder;
+    if (this.allocationHint != null) {
+      return this.allocationHint;
+    }
+    if (!p.hasAllocationHint()) {
+      return null;
+    }
+    this.allocationHint = p.getAllocationHint();
+    return this.allocationHint;
+  }
+
+  @Override
+  public void setAllocationHint(String allocationHint) {
+    maybeInitBuilder();
+    if (containerStatus == null) 
+      builder.clearAllocationHint();
+    this.allocationHint = allocationHint;
+  }
 
   private ContainerStateProto convertToProtoFormat(ContainerState e) {
     return ProtoUtils.convertToProtoFormat(e);
@@ -332,7 +354,7 @@ public class ContainerPBImpl extends ProtoBase<ContainerProto> implements Contai
   private ContainerStatusPBImpl convertFromProtoFormat(ContainerStatusProto p) {
     return new ContainerStatusPBImpl(p);
   }
-
+  
   private ContainerStatusProto convertToProtoFormat(ContainerStatus t) {
     return ((ContainerStatusPBImpl)t).getProto();
   }

@@ -159,4 +159,12 @@ public interface Container extends Comparable<Container> {
   @Private
   @Unstable
   void setContainerStatus(ContainerStatus containerStatus);
+  
+  @Public
+  @Stable
+  String getAllocationHint();
+  
+  @Private
+  @Unstable
+  void setAllocationHint(String allocationHint);
 }

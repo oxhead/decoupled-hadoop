@@ -494,8 +494,13 @@ public class FlowScheduler extends FifoScheduler implements ResourceScheduler, C
 					}
 				}
 
+				// TODO add allocation hint...
 				// Create the container
 				Container container = BuilderUtils.newContainer(containerId, nodeId, node.getRMNode().getHttpAddress(), capability, priority, containerToken);
+				if (task!=null && task.storage!=null) {
+					container.setAllocationHint(task.storage.host);
+					LOG.fatal("[Hint] container=" + container.getId() + ", hint=" + container.getAllocationHint());
+				}
 
 				// Allocate!
 				// Inform the application
