@@ -56,6 +56,7 @@ message AllocateRequestProto {
   repeated ContainerIdProto release = 3;
   optional int32 response_id = 4;
   optional float progress = 5;
+  optional string request_detail = 6;
 }
 
 message AllocateResponseProto {

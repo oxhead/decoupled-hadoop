@@ -70,7 +70,7 @@ message ContainerProto {
   optional ContainerStateProto state = 6;
   optional hadoop.common.TokenProto container_token = 7;
   optional ContainerStatusProto container_status = 8;
-  optional string allocation_hint= 9;
+  optional string allocation_hint = 9;
 }
 
 enum YarnApplicationStateProto {
@@ -206,6 +206,7 @@ message ResourceRequestProto {
   optional string host_name = 2;
   optional ResourceProto capability = 3;
   optional int32 num_containers = 4;
+  optional string request_detail = 5;
 }
 
 message AMResponseProto {

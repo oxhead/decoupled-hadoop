@@ -121,6 +121,15 @@ public abstract class ResourceRequest implements Comparable<ResourceRequest> {
   @Public
   @Stable
   public abstract void setNumContainers(int numContainers);
+  
+  @Public
+  @Stable
+  public abstract String getRequestDetail();
+  
+  @Public
+  @Stable
+  public abstract void setRequestDetail(String requestDetail);
+  
 
   @Override
   public int hashCode() {

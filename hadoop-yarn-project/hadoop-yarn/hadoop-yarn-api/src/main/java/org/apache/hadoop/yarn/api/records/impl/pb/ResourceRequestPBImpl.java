@@ -146,6 +146,25 @@ public class ResourceRequestPBImpl extends  ResourceRequest {
     maybeInitBuilder();
     builder.setNumContainers((numContainers));
   }
+  
+  @Override
+  public String getRequestDetail() {
+    ResourceRequestProtoOrBuilder p = viaProto ? proto : builder;
+    if (!p.hasRequestDetail()) {
+      return null;
+    }
+    return (p.getRequestDetail());
+  }
+
+  @Override
+  public void setRequestDetail(String requestDetail) {
+    maybeInitBuilder();
+    if (requestDetail == null) {
+      builder.clearRequestDetail();
+      return;
+    }
+    builder.setRequestDetail((requestDetail));
+  }
 
   private PriorityPBImpl convertFromProtoFormat(PriorityProto p) {
     return new PriorityPBImpl(p);

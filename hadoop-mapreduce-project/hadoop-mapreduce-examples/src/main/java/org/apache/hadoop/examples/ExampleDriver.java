@@ -20,8 +20,13 @@ package org.apache.hadoop.examples;
 
 import org.apache.hadoop.examples.dancing.DistributedPentomino;
 import org.apache.hadoop.examples.dancing.Sudoku;
-import org.apache.hadoop.examples.my.Classification;
 import org.apache.hadoop.examples.pi.DistBbp;
+import org.apache.hadoop.examples.puma.Classification;
+import org.apache.hadoop.examples.puma.HistogramMovies;
+import org.apache.hadoop.examples.puma.HistogramRatings;
+import org.apache.hadoop.examples.puma.InvertedIndex;
+import org.apache.hadoop.examples.puma.SelfJoin;
+import org.apache.hadoop.examples.puma.TermVector;
 import org.apache.hadoop.examples.terasort.TeraGen;
 import org.apache.hadoop.examples.terasort.TeraSort;
 import org.apache.hadoop.examples.terasort.TeraValidate;
@@ -68,7 +73,11 @@ public class ExampleDriver {
       pgd.addClass("teravalidate", TeraValidate.class, "Checking results of terasort");
       pgd.addClass("custommap", CustomMap.class, "A map-only job with stress workload per bytes");
       pgd.addClass("nocomputation", NoComputation.class, "A map-only job with doing nothing");
-      pgd.addClass("classification", Classification.class, "A map-only job with stress workload per bytes");
+      pgd.addClass("invertedindex", InvertedIndex.class, "Inverted index");
+      pgd.addClass("termvector", TermVector.class, "Term vector");
+      pgd.addClass("histogrammovies", HistogramMovies.class, "Histogram movices");
+      pgd.addClass("histogramratings", HistogramRatings.class, "Histogram ratings");
+      pgd.addClass("selfjoin", SelfJoin.class, "Self join");
       exitCode = pgd.driver(argv);
     }
     catch(Throwable e){

@@ -23,7 +23,9 @@ import static org.apache.hadoop.yarn.util.StringHelper.join;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowSchedulerNode;
 import org.apache.hadoop.yarn.server.resourcemanager.webapp.dao.FlowSchedulerInfo;
+import org.apache.hadoop.yarn.webapp.ResponseInfo;
 import org.apache.hadoop.yarn.webapp.SubView;
 import org.apache.hadoop.yarn.webapp.hamlet.Hamlet;
 import org.apache.hadoop.yarn.webapp.hamlet.Hamlet.DIV;
@@ -50,7 +52,7 @@ class FlowSchedulerPage extends RmView {
     }
 
     @Override public void render(Block html) {
-      info("\'" + sinfo.getQueueName() + "\' Queue Status").
+      ResponseInfo info = info("\'" + sinfo.getQueueName() + "\' Queue Status").
         _("Queue State:" , sinfo.getState()).
         _("Minimum Queue Memory Capacity:" , Integer.toString(sinfo.getMinQueueMemoryCapacity())).
         _("Maximum Queue Memory Capacity:" , Integer.toString(sinfo.getMaxQueueMemoryCapacity())).
@@ -60,6 +62,10 @@ class FlowSchedulerPage extends RmView {
         _("Total Node Capacity:" , Integer.toString(sinfo.getTotalNodeCapacity())).
         _("Number of Node Containers:" , Integer.toString(sinfo.getNumContainers())).
         _("Assignment Model", sinfo.getAssignmentModel());
+      
+      for (FlowSchedulerNode node : sinfo.getNodes()) {
+    	  	info._(node.getHostName(), node.getLoad());
+      }
 
       html._(InfoBlock.class);
     }

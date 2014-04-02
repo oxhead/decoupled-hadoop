@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.yarn.server.resourcemanager.webapp.dao;
 
+import java.util.List;
+
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlRootElement;
@@ -31,6 +33,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNodeReport;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowSchedulerNode;
 
 @XmlRootElement(name = "flowScheduler")
 @XmlType(name = "flowScheduler")
@@ -49,6 +52,7 @@ public class FlowSchedulerInfo extends SchedulerInfo {
   protected int numContainers;
   
   protected String assignmentModel;
+  private List<FlowSchedulerNode> nodes;
 
   @XmlTransient
   protected String qstateFormatted;
@@ -80,7 +84,8 @@ public class FlowSchedulerInfo extends SchedulerInfo {
     this.numContainers = 0;
     
     this.assignmentModel = fs.getAssignmentMode();
-
+    this.nodes = fs.getNodes();
+    
     for (RMNode ni : rmContext.getRMNodes().values()) {
       SchedulerNodeReport report = fs.getNodeReport(ni.getNodeID());
       this.usedNodeCapacity += report.getUsedResource().getMemory();
@@ -136,6 +141,10 @@ public class FlowSchedulerInfo extends SchedulerInfo {
   
   public String getAssignmentModel() {
 	  return this.assignmentModel;
+  }
+  
+  public List<FlowSchedulerNode> getNodes() {
+	  return this.nodes;
   }
 
 }

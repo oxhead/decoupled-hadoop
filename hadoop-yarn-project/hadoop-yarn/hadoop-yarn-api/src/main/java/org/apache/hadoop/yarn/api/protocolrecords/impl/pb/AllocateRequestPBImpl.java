@@ -332,4 +332,16 @@ public class AllocateRequestPBImpl extends ProtoBase<AllocateRequestProto> imple
   private ContainerIdProto convertToProtoFormat(ContainerId t) {
     return ((ContainerIdPBImpl)t).getProto();
   }
+
+@Override
+public String getRequesteDetail() {
+	AllocateRequestProtoOrBuilder p = viaProto ? proto : builder;
+	return p.getRequestDetail();
+}
+
+@Override
+public void setRequestDetail(String requestDetail) {
+	maybeInitBuilder();
+	builder.setRequestDetail(requestDetail);
+}
 }  

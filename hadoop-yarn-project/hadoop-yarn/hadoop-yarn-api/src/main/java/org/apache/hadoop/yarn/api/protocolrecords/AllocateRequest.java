@@ -191,4 +191,13 @@ public interface AllocateRequest {
   @Private
   @Unstable
   void clearReleases();
+  
+  @Public
+  @Stable
+  String getRequesteDetail();
+  
+  @Public
+  @Stable
+  void setRequestDetail(String requestDetail);
+  
 }

@@ -70,8 +70,6 @@ import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.RackResolver;
 
-import com.sun.org.apache.bcel.internal.generic.ALOAD;
-
 /**
  * Allocates the container from the ResourceManager scheduler.
  */
@@ -898,6 +896,13 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
         
     private void assignContainers(List<Container> allocatedContainers) {
+    	    LOG.fatal("~~~~~~~~~~~~~~~~~~~~");
+    		for (Container c : allocatedContainers) {
+    			LOG.fatal("[Hint] container=" + c.getId() + ", hint=" + c.getAllocationHint());
+    		}
+    		LOG.fatal("~~~~~~~~~~~~~~~~~~~~");
+    		assignMapsByHint(allocatedContainers);
+    		
       Iterator<Container> it = allocatedContainers.iterator();
       while (it.hasNext()) {
         Container allocated = it.next();
@@ -908,8 +913,6 @@ public class RMContainerAllocator extends RMContainerRequestor
         }
       }
       
-      // TODO disalbe this when flow scheduler is not enabled.
-      assignMapsByHint(allocatedContainers);
       assignMapsWithLocality(allocatedContainers);
     }
     
@@ -1067,40 +1070,42 @@ public class RMContainerAllocator extends RMContainerRequestor
     
     @SuppressWarnings("unchecked")
     private void assignMapsByHint(List<Container> allocatedContainers) {
-      // try to assign to all nodes first to match node local
-      Iterator<Container> it = allocatedContainers.iterator();
-      while(it.hasNext() && maps.size() > 0){
-        Container allocated = it.next();        
-        Priority priority = allocated.getPriority();
-        String allocationHint = allocated.getAllocationHint();
-        assert PRIORITY_MAP.equals(priority);
-        // "if (maps.containsKey(tId))" below should be almost always true.
-        // hence this while loop would almost always have O(1) complexity
-        if (allocationHint==null) {
-        		continue;
+    	// try to assign to all nodes first to match node local
+        Iterator<Container> it = allocatedContainers.iterator();
+        while(it.hasNext()){
+      	    Container allocated = it.next();
+      	    String taskAttemptIdString = allocated.getAllocationHint();
+      	    if (taskAttemptIdString == null || taskAttemptIdString.length() < 1) {
+      	    		continue;
+      	    }
+      	    for (TaskAttemptId taskAttemptId : maps.keySet()) {
+      	    		if (taskAttemptId.toString().equals(taskAttemptIdString)) {
+      	    			ContainerRequest assigned = maps.remove(taskAttemptId);
+      	            containerAssigned(allocated, assigned);
+      	            it.remove();
+      	            JobCounterUpdateEvent jce =
+      	              new JobCounterUpdateEvent(assigned.attemptID.getTaskId().getJobId());
+      	            jce.addCounterUpdate(JobCounter.RACK_LOCAL_MAPS, 1);
+      	            eventHandler.handle(jce);
+      	             rackLocalAssigned++;
+      	            if (LOG.isDebugEnabled()) {
+      	              LOG.debug("Assigned map based on allocation hint " + taskAttemptIdString);
+      	            }
+      	            break;
+      	    		}
+      	    }
+      	    for (TaskAttemptId taskAttemptId : reduces.keySet()) {
+      	    		if (taskAttemptId.toString().equals(taskAttemptIdString)) {
+      	    			ContainerRequest assigned = reduces.remove(taskAttemptId);
+      	    			containerAssigned(allocated, assigned);
+      	    			it.remove();
+      	    			if (LOG.isDebugEnabled()) {
+      	    				LOG.debug("Assigned reduce based on allocation hint " + taskAttemptIdString);
+      	    			}
+      	    			break;
+      	    		}
+	        }
         }
-        LinkedList<TaskAttemptId> list = mapsHostMapping.get(allocationHint);
-        while (list != null && list.size() > 0) {
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("Hint matched to the request list " + allocationHint);
-          }
-          TaskAttemptId tId = list.removeFirst();
-          if (maps.containsKey(tId)) {
-            ContainerRequest assigned = maps.remove(tId);
-            containerAssigned(allocated, assigned);
-            it.remove();
-            //JobCounterUpdateEvent jce =
-            //  new JobCounterUpdateEvent(assigned.attemptID.getTaskId().getJobId());
-            //jce.addCounterUpdate(JobCounter.DATA_LOCAL_MAPS, 1);
-            //eventHandler.handle(jce);
-            //hostLocalAssigned++;
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("[Allocation] container=" + allocated.getId() + ", hint="+ allocationHint);
-            }
-            break;
-          }
-        }
-      }
     }
     
   }
