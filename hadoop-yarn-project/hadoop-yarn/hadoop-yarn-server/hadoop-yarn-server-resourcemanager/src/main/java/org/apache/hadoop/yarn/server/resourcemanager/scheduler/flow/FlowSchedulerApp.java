@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -342,6 +343,16 @@ public class FlowSchedulerApp extends SchedulerApplication {
 		return unscheduledTasks;
 	}
 
+	public List<FlowSchedulerTask> getCompletedMapTasks() {
+		List<FlowSchedulerTask> completedTasks = new LinkedList<FlowSchedulerTask>();
+		for (FlowSchedulerTask task : mapTasks.keySet()) {
+			if (task.isCompleted()) {
+				completedTasks.add(task);
+			}
+		}
+		return completedTasks;
+	}
+
 	public List<FlowSchedulerTask> getUnscheduledMapTasks() {
 		List<FlowSchedulerTask> unscheduledTasks = new LinkedList<FlowSchedulerTask>();
 		for (FlowSchedulerTask task : mapTasks.keySet()) {
@@ -354,6 +365,36 @@ public class FlowSchedulerApp extends SchedulerApplication {
 
 	public int getNumOfMapTasks() {
 		return mapTasks.size();
+	}
+
+	public int getNumOfCompletedMapTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : mapTasks.keySet()) {
+			if (task.isCompleted()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	public int getNumOfLaunchedMapTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : mapTasks.keySet()) {
+			if (task.isLaunched()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	public int getNumOfUnscheduledMapTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : mapTasks.keySet()) {
+			if (task.isUnscheduled()) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	public List<FlowSchedulerTask> getReduceTasks() {
@@ -372,6 +413,16 @@ public class FlowSchedulerApp extends SchedulerApplication {
 
 	public int getNumOfReduceTasks() {
 		return reduceTasks.size();
+	}
+
+	public int getNumOfUnscheduledReduceTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : reduceTasks.keySet()) {
+			if (task.isUnscheduled()) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	public FlowSchedulerTask getAppMasterTask() {
@@ -412,11 +463,10 @@ public class FlowSchedulerApp extends SchedulerApplication {
 		return createdTaskMap.containsKey(taskAttemptId);
 	}
 
-	public void addTask(String taskAttemptId, Priority priority, Resource capability, String host) {
-		Type type = FlowSchedulerTask.getType(priority.getPriority());
+	public void addTask(String taskId, String taskAttemptId, Type type, Priority priority, Resource capability, String host) {
 		FlowRate flowRate = flowSchedulerManager.lookupFlowRate(this, type);
 		FlowSchedulerStorage storage = flowSchedulerManager.lookupStorage(host);
-		FlowSchedulerTask task = new FlowSchedulerTask(taskAttemptId, type, priority, flowRate, capability, this, storage);
+		FlowSchedulerTask task = new FlowSchedulerTask(taskId, taskAttemptId, type, priority, flowRate, capability, this, storage);
 		if (task.isAppMaster()) {
 			this.appMaster = task;
 		} else if (task.isMap()) {
@@ -430,6 +480,7 @@ public class FlowSchedulerApp extends SchedulerApplication {
 	// Key method to integrate RM protocol to my own implementation
 	public synchronized void updateResourceRequests(List<ResourceRequest> ask) {
 		LOG.fatal("[Ask] update request with size=" + ask.size());
+		Random rand = new Random();
 		this.appSchedulingInfo.updateResourceRequests(ask);
 		boolean containRequestDetail = false;
 		for (ResourceRequest request : ask) {
@@ -440,25 +491,23 @@ public class FlowSchedulerApp extends SchedulerApplication {
 				String[] taskAttempDetails = requestDetail.split(";");
 				for (String taskAttempDetail : taskAttempDetails) {
 					String[] detail = taskAttempDetail.split(":");
-					String taskAttemptId = detail[0];
-					String taskType = detail[1];
+					String taskId = detail[0];
+					String taskAttemptId = detail[1];
+					String taskType = detail[2];
+					String priorityString = detail[3];
 					String dataHost = null;
-					if (detail.length > 2) {
-						String dataHosts = detail[2];
-						if (dataHosts.split(",").length > 0) {
-							dataHost = dataHosts.split(",")[0];
+					if (detail.length > 4) {
+						String dataHosts = detail[4];
+						String[] dataHostList = dataHosts.split(",");
+						if (dataHostList.length > 0) {
+							dataHost = dataHostList[rand.nextInt(dataHostList.length)];
 						}
 					}
+					Type type = FlowSchedulerTask.getType(taskType);
 					Priority priority = recordFactory.newRecordInstance(Priority.class);
-					if (taskType.equalsIgnoreCase("map")) {
-						priority.setPriority(20);
-					} else if (taskType.equalsIgnoreCase("reduce")) {
-						priority.setPriority(10);
-					} else {
-						LOG.fatal("[Ask] might be PRIORITY_FAST_FAIL_MAP");
-					}
+					priority.setPriority(Integer.parseInt(priorityString));
 					if (!isTaskCreated(taskAttemptId)) {
-						addTask(taskAttemptId, priority, request.getCapability(), dataHost);
+						addTask(taskId, taskAttemptId, type, priority, request.getCapability(), dataHost);
 					} else {
 						LOG.fatal("The taskAttempId exists: " + taskAttemptId);
 					}
@@ -471,7 +520,7 @@ public class FlowSchedulerApp extends SchedulerApplication {
 				Priority priority = recordFactory.newRecordInstance(Priority.class);
 				priority.setPriority(0);
 				Resource capability = ask.get(0).getCapability();
-				addTask("AppMaster_" + this.getApplicationId(), priority, capability, null);
+				addTask("AppMaster_" + this.getApplicationId(), "AppMaster_" + this.getApplicationAttemptId(), Type.AppMaster, priority, capability, null);
 			}
 		}
 	}

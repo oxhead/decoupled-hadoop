@@ -154,9 +154,13 @@ public abstract class RMContainerRequestor extends RMCommunicator {
 	  for (int i = 0; i < taskList.size(); i++) {
 		  TaskAttemptId taskAttemptId = taskList.get(i);
 		  List<String> dataHosts = taskDataHostMap.get(taskAttemptId);
+		  builder.append(taskAttemptId.getTaskId().toString());
+		  builder.append(":");
 		  builder.append(taskAttemptId.toString());
 		  builder.append(":");
 		  builder.append(taskAttemptId.getTaskId().getTaskType().toString());
+		  builder.append(":");
+		  builder.append(taskPriorityMap.get(taskAttemptId).toString());
 		  builder.append(":");
 		  for (int j = 0; j < dataHosts.size(); j++) {
 				 builder.append(dataHosts.get(j));
@@ -292,8 +296,10 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   }
   
   Map<TaskAttemptId, List<String>> taskDataHostMap = new HashMap<TaskAttemptId, List<String>>();
+  Map<TaskAttemptId, Priority> taskPriorityMap = new HashMap<TaskAttemptId, Priority>();
   protected void addContainerReq(ContainerRequest req) {
 	taskDataHostMap.put(req.attemptID, new LinkedList<String>());
+	taskPriorityMap.put(req.attemptID, req.priority);
     // Create resource requests
     for (String host : req.hosts) {
     	  taskDataHostMap.get(req.attemptID).add(host);

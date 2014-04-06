@@ -61,6 +61,15 @@ public class FlowSchedulerConfiguration extends Configuration {
 	public static final String FLOWRATE_CUSTOMMAP = PREFIX + "flowrate.custommap";
 
 	@Private
+	public static final String FLOWRATE_HISTOGRAMMOVIES = PREFIX + "flowrate.histogram-movies";
+
+	@Private
+	public static final String FLOWRATE_HISTOGRAMRATINGS = PREFIX + "flowrate.histogram-ratings";
+
+	@Private
+	public static final String FLOWRATE_INVERTEDINDEX = PREFIX + "flowrate.inverted-index";
+
+	@Private
 	public static final String FLOWRATE_DEFAULT = PREFIX + "flowrate.default";
 
 	@Private
@@ -114,6 +123,12 @@ public class FlowSchedulerConfiguration extends Configuration {
 			} else {
 				flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1");
 			}
+		} else if (jobName.contains("histogram-movies")) {
+			flowRateString = getStrings(FLOWRATE_HISTOGRAMMOVIES);
+		} else if (jobName.contains("histogram-ratings")) {
+			flowRateString = getStrings(FLOWRATE_HISTOGRAMRATINGS);
+		} else if (jobName.contains("inverted-index")) {
+			flowRateString = getStrings(FLOWRATE_INVERTEDINDEX);
 		} else {
 			flowRateString = getStrings(FLOWRATE_DEFAULT);
 		}

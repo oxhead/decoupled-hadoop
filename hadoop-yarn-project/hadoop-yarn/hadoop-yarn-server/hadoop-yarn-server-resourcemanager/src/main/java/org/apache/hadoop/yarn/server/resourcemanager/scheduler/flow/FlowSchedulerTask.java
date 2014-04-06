@@ -14,6 +14,7 @@ class FlowSchedulerTask {
 	public static final int PRIORITY_MAP = 20;
 	public static final int PRIORITY_REDUCE = 10;
 
+	private String taskId;
 	private String attemptId;
 	private Type type;
 	private Priority priority;
@@ -27,7 +28,8 @@ class FlowSchedulerTask {
 	private boolean running = false;
 	private boolean completed = false;
 
-	public FlowSchedulerTask(String attemptId, Type type, Priority priority, FlowRate flowDemand, Resource resourceDemand, FlowSchedulerApp app, FlowSchedulerStorage storage) {
+	public FlowSchedulerTask(String taskId, String attemptId, Type type, Priority priority, FlowRate flowDemand, Resource resourceDemand, FlowSchedulerApp app, FlowSchedulerStorage storage) {
+		this.taskId = taskId;
 		this.attemptId = attemptId;
 		this.type = type;
 		this.priority = priority;
@@ -35,6 +37,17 @@ class FlowSchedulerTask {
 		this.resourceDemand = resourceDemand;
 		this.app = app;
 		this.storage = storage;
+	}
+
+	public static Type getType(String typeName) {
+		if (typeName.equalsIgnoreCase("map")) {
+			return Type.Map;
+		} else if (typeName.equalsIgnoreCase("reduce")) {
+			return Type.Reduce;
+		} else if (typeName.equalsIgnoreCase("appmaster")) {
+			return Type.AppMaster;
+		}
+		return Type.UNKNOWN;
 	}
 
 	public static Type getType(int priority) {
@@ -140,6 +153,14 @@ class FlowSchedulerTask {
 
 	public boolean isLaunched() {
 		return this.rmContainer != null;
+	}
+
+	public boolean isCompleted() {
+		return completed;
+	}
+
+	public boolean isUnscheduled() {
+		return !isLaunched();
 	}
 
 	public boolean isMap() {

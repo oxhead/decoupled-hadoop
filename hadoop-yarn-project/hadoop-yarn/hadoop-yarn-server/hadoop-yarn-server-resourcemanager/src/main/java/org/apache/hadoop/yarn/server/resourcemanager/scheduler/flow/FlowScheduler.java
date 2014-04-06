@@ -314,7 +314,7 @@ public class FlowScheduler implements ResourceScheduler, Configurable {
 		// Inform the application
 		NodeType type = NodeType.OFF_SWITCH;
 		Priority priority = task.getPriority();
-		// problematic
+		LOG.fatal("@ task=" + task.getAttemptId() + ", priority=" + priority);
 		ResourceRequest request = application.getResourceRequest(priority, FlowSchedulerNode.ANY);
 		RMContainer rmContainer = application.allocate(type, node, priority, request, container);
 		if (rmContainer != null) {
