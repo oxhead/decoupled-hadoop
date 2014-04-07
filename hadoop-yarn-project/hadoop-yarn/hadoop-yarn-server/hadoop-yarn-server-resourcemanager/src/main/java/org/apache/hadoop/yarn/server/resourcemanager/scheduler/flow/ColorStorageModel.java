@@ -31,9 +31,6 @@ public class ColorStorageModel implements AssignmentModel {
 	MapTaskStore mapTaskStore;
 	ReduceTaskStore reduceTaskStore;
 
-	Map<FlowSchedulerApp, Integer> mapTaskRemain;
-	Map<FlowSchedulerApp, Integer> maxReduceTask;
-
 	public ColorStorageModel(List<FlowSchedulerNode> nodes, List<FlowSchedulerTask> tasks, List<FlowSchedulerStorage> storages) {
 		this.nodes = nodes;
 		this.tasks = tasks;
@@ -47,9 +44,6 @@ public class ColorStorageModel implements AssignmentModel {
 		nodeStore = new NodeStore();
 		storageStore = new StorageStore();
 
-		mapTaskRemain = new HashMap<FlowSchedulerApp, Integer>();
-		maxReduceTask = new HashMap<FlowSchedulerApp, Integer>();
-
 		for (FlowSchedulerNode node : nodes) {
 			nodeStore.addNode(node);
 		}
@@ -62,12 +56,6 @@ public class ColorStorageModel implements AssignmentModel {
 				} else {
 					mapTaskStore.addTask(task);
 				}
-
-				if (!mapTaskRemain.containsKey(task.getApp())) {
-					mapTaskRemain.put(task.getApp(), new Integer(0));
-				}
-				Integer count = mapTaskRemain.get(task.getApp());
-				mapTaskRemain.put(task.getApp(), new Integer(count + 1));
 			} else if (task.isReduce()) {
 				reduceTaskStore.addTask(task);
 			} else {
@@ -79,11 +67,6 @@ public class ColorStorageModel implements AssignmentModel {
 		reduceTaskStore.update();
 		storageStore.update();
 
-		// calculate the better number of reduce tasks to be scheduled
-		for (FlowSchedulerApp app : mapTaskRemain.keySet()) {
-			int mapCount = mapTaskRemain.get(app);
-			maxReduceTask.put(app, mapCount / 16 + 1);
-		}
 	}
 
 	public void report() {
@@ -100,7 +83,6 @@ public class ColorStorageModel implements AssignmentModel {
 
 		LOG.fatal("[before]------------------------");
 		report();
-		LOG.fatal("[before]------------------------");
 
 		// evenly distribution should be enough
 		// nodeStore should not update for even distribution
@@ -117,17 +99,11 @@ public class ColorStorageModel implements AssignmentModel {
 		while (nodeStore.hasNext() && reduceTaskStore.hasNext()) {
 			ColorComputingNode node = nodeStore.next();
 			ColorTask task = reduceTaskStore.next();
-			int maxReduceCount = maxReduceTask.containsKey(task.task.getApp()) ? maxReduceTask.get(task.task.getApp()) : Integer.MAX_VALUE;
-			if (maxReduceCount > 0) {
-				Assignment assignment = new Assignment(task.task, node.node);
-				assignments.add(assignment);
-				node.assignTask(task);
-				nodeStore.update();
-				if (maxReduceTask.containsKey(task.task.getApp())) {
-					maxReduceTask.put(task.task.getApp(), maxReduceCount - 1);
-				}
-				LOG.fatal("@@ assign reduce: " + task.task.getAttemptId() + " to " + node.node.getHostName());
-			}
+			Assignment assignment = new Assignment(task.task, node.node);
+			assignments.add(assignment);
+			node.assignTask(task);
+			nodeStore.update();
+			LOG.fatal("@@ assign reduce: " + task.task.getAttemptId() + " to " + node.node.getHostName());
 		}
 
 		// TODO: why too many tasks are added
@@ -155,9 +131,19 @@ public class ColorStorageModel implements AssignmentModel {
 			nodeStore.update();
 		}
 
+		Iterator<ColorTask> unscheduledReduceIterator = reduceTaskStore.getUnscheduledTasks().iterator();
+		while (nodeStore.hasNext() && unscheduledReduceIterator.hasNext()) {
+			ColorComputingNode node = nodeStore.next();
+			ColorTask task = unscheduledReduceIterator.next();
+			Assignment assignment = new Assignment(task.task, node.node);
+			assignments.add(assignment);
+			node.assignTask(task);
+			LOG.fatal("@@ assign reduce for no more map tasks: " + task.task.getAttemptId() + " to " + node.node.getHostName());
+			nodeStore.update();
+		}
+
 		LOG.fatal("[after]------------------------");
 		report();
-		LOG.fatal("[after]------------------------");
 	}
 
 	@Override
@@ -326,12 +312,33 @@ public class ColorStorageModel implements AssignmentModel {
 		};
 
 		Map<FlowSchedulerApp, TreeSet<ColorTask>> appReduceMap = new HashMap<FlowSchedulerApp, TreeSet<ColorTask>>();
+		Map<FlowSchedulerApp, Integer> allowedReduceMap = new HashMap<FlowSchedulerApp, Integer>();
+		List<ColorTask> allowedReduceTasks = new LinkedList<ColorTask>();
 
 		public ReduceTaskStore() {
 
 		}
 
 		public void update() {
+			for (FlowSchedulerApp app : appReduceMap.keySet()) {
+				int numOfMapTasks = app.getNumOfMapTasks();
+				int numOfCompletedMapTasks = app.getNumOfCompletedMapTasks();
+				int numofLaunchedMapTasks = app.getNumOfLaunchedMapTasks();
+				int numOfReduceTasks = app.getNumOfReduceTasks();
+				int numOfCompletedReduceTasks = app.getNumOfCompletedReduceTasks();
+				int numOfLaunchedReduceTasks = app.getNumOfLaunchedReduceTasks();
+				int numOfScheduledReduceTasks = (int) ((double) (numOfCompletedMapTasks + numofLaunchedMapTasks) / numOfMapTasks * numOfReduceTasks);
+				int numOfAllowedReduceTasks = numOfScheduledReduceTasks - (numOfCompletedReduceTasks + numOfLaunchedReduceTasks);
+				numOfAllowedReduceTasks = numOfAllowedReduceTasks > 0 ? numOfAllowedReduceTasks : 0;
+				numOfAllowedReduceTasks = numOfAllowedReduceTasks > appReduceMap.get(app).size() ? appReduceMap.get(app).size() : numOfAllowedReduceTasks;
+				allowedReduceMap.put(app, numOfAllowedReduceTasks);
+			}
+			for (Map.Entry<FlowSchedulerApp, Integer> entry : allowedReduceMap.entrySet()) {
+				Iterator<ColorTask> tasks = appReduceMap.get(entry.getKey()).iterator();
+				for (int i = 0; i < entry.getValue(); i++) {
+					allowedReduceTasks.add(tasks.next());
+				}
+			}
 		}
 
 		public void report() {
@@ -353,24 +360,20 @@ public class ColorStorageModel implements AssignmentModel {
 		}
 
 		public boolean hasNext() {
-			for (Map.Entry<FlowSchedulerApp, TreeSet<ColorTask>> entry : appReduceMap.entrySet()) {
-				if (entry.getValue() != null && entry.getValue().size() > 0) {
-					return true;
-				}
-			}
-			return false;
+			return allowedReduceTasks.size() > 0;
 		}
 
 		public ColorTask next() {
-			TreeSet<FlowSchedulerApp> orderedSet = new TreeSet<FlowSchedulerApp>(appComparator);
-			orderedSet.addAll(appReduceMap.keySet());
-			FlowSchedulerApp appKey = orderedSet.pollFirst();
-			TreeSet<ColorTask> reduceSet = appReduceMap.get(appKey);
-			ColorTask task = reduceSet.pollFirst();
-			if (reduceSet.size() == 0) {
-				appReduceMap.remove(appKey);
+			return allowedReduceTasks.remove(0);
+		}
+
+		public List<ColorTask> getUnscheduledTasks() {
+			Set<ColorTask> unscheduledTasks = new HashSet<ColorTask>();
+			unscheduledTasks.addAll(allowedReduceTasks);
+			for (Entry<FlowSchedulerApp, TreeSet<ColorTask>> entry : appReduceMap.entrySet()) {
+				unscheduledTasks.addAll(entry.getValue());
 			}
-			return task;
+			return new LinkedList<ColorTask>(unscheduledTasks);
 		}
 	}
 

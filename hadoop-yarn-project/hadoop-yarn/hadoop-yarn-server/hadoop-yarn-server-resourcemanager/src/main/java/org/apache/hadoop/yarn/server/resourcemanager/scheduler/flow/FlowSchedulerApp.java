@@ -415,6 +415,26 @@ public class FlowSchedulerApp extends SchedulerApplication {
 		return reduceTasks.size();
 	}
 
+	public int getNumOfCompletedReduceTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : reduceTasks.keySet()) {
+			if (task.isCompleted()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	public int getNumOfLaunchedReduceTasks() {
+		int count = 0;
+		for (FlowSchedulerTask task : reduceTasks.keySet()) {
+			if (task.isLaunched()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	public int getNumOfUnscheduledReduceTasks() {
 		int count = 0;
 		for (FlowSchedulerTask task : reduceTasks.keySet()) {
@@ -524,4 +544,5 @@ public class FlowSchedulerApp extends SchedulerApplication {
 			}
 		}
 	}
+
 }
