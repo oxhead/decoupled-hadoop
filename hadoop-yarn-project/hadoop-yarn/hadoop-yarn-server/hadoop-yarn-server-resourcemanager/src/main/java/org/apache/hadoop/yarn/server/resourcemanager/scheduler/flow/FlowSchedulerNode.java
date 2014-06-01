@@ -20,8 +20,10 @@ package org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -60,6 +62,8 @@ public class FlowSchedulerNode extends SchedulerNode {
 	private double capability;
 	private double load;
 	private int slotSize;
+
+	private Set<FlowSchedulerTask> runningTasks = new HashSet<FlowSchedulerTask>();
 
 	public static final String ANY = "*";
 
@@ -242,16 +246,26 @@ public class FlowSchedulerNode extends SchedulerNode {
 
 	public void launchTask(FlowSchedulerTask task, RMContainer rmContainer) {
 		this.load += (task.getFlowDemand());
+		this.runningTasks.add(task);
 		allocateContainer(task.getApp().getApplicationId(), rmContainer);
 	}
 
 	public void completeTask(FlowSchedulerTask task) {
 		this.load -= (task.getFlowDemand());
+		this.runningTasks.remove(task);
 		releaseContainer(task.getRmContainer().getContainer());
+	}
+
+	public Set<FlowSchedulerTask> getRunningTasks() {
+		return this.runningTasks;
 	}
 
 	public int getAvailableSlots() {
 		return getAvailableResource().getMemory() / this.slotSize;
+	}
+
+	public double getCapability() {
+		return capability;
 	}
 
 }

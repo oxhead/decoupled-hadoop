@@ -483,6 +483,11 @@ public class FlowSchedulerApp extends SchedulerApplication {
 		return createdTaskMap.containsKey(taskAttemptId);
 	}
 
+	public double getMapFlowDemand() {
+		FlowRate flowRate = flowSchedulerManager.lookupFlowRate(this, Type.Map);
+		return flowRate.flowIn + flowRate.flowOut;
+	}
+
 	public void addTask(String taskId, String taskAttemptId, Type type, Priority priority, Resource capability, String host) {
 		FlowRate flowRate = flowSchedulerManager.lookupFlowRate(this, type);
 		FlowSchedulerStorage storage = flowSchedulerManager.lookupStorage(host);

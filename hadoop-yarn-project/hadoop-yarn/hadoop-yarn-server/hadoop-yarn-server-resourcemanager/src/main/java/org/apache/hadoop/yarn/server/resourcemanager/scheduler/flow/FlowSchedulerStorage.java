@@ -46,6 +46,10 @@ class FlowSchedulerStorage {
 		return load;
 	}
 
+	public List<FlowSchedulerTask> getServingTasks() {
+		return servingTasks;
+	}
+
 	@Override
 	public String toString() {
 		return "FlowNetworkStorage [host=" + host + ", capacity=" + capacity + "]";

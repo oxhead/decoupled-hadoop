@@ -546,7 +546,7 @@ public class FlowScheduler implements ResourceScheduler, Configurable {
 			model = new ColorStorageModel(availableNodes, unscheduledTasks, dataStorages);
 			LOG.fatal("[Assignment] model: Color Storag Model");
 		} else {
-			// model = new MinCostFlowModel(nodes, storageNodes, tasks, solver);
+			model = new FlowModel(availableNodes, dataStorages, unscheduledTasks, (FlowSchedulerConfiguration) getConf());
 			LOG.fatal("[Assignment] model: Min Cost Flow Model");
 		}
 
@@ -572,6 +572,9 @@ public class FlowScheduler implements ResourceScheduler, Configurable {
 			// happen
 			if (request != null) {
 				assignContainer(application, task, node);
+			}
+			if (task.getStorage() != null) {
+				LOG.fatal("[Storage] " + task.getStorage().getHost() + " <-" + task.getAttemptId());
 			}
 		}
 
