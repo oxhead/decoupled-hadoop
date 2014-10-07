@@ -21,6 +21,12 @@ package org.apache.hadoop.examples;
 import org.apache.hadoop.examples.dancing.DistributedPentomino;
 import org.apache.hadoop.examples.dancing.Sudoku;
 import org.apache.hadoop.examples.pi.DistBbp;
+import org.apache.hadoop.examples.puma.Classification;
+import org.apache.hadoop.examples.puma.HistogramMovies;
+import org.apache.hadoop.examples.puma.HistogramRatings;
+import org.apache.hadoop.examples.puma.InvertedIndex;
+import org.apache.hadoop.examples.puma.SelfJoin;
+import org.apache.hadoop.examples.puma.TermVector;
 import org.apache.hadoop.examples.terasort.TeraGen;
 import org.apache.hadoop.examples.terasort.TeraSort;
 import org.apache.hadoop.examples.terasort.TeraValidate;
@@ -38,12 +44,6 @@ public class ExampleDriver {
     try {
       pgd.addClass("wordcount", WordCount.class, 
                    "A map/reduce program that counts the words in the input files.");
-      pgd.addClass("wordmean", WordMean.class,
-                   "A map/reduce program that counts the average length of the words in the input files.");
-      pgd.addClass("wordmedian", WordMedian.class,
-                   "A map/reduce program that counts the median length of the words in the input files.");
-      pgd.addClass("wordstandarddeviation", WordStandardDeviation.class,
-                   "A map/reduce program that counts the standard deviation of the length of the words in the input files.");
       pgd.addClass("aggregatewordcount", AggregateWordCount.class, 
                    "An Aggregate based map/reduce program that counts the words in the input files.");
       pgd.addClass("aggregatewordhist", AggregateWordHistogram.class, 
@@ -71,7 +71,14 @@ public class ExampleDriver {
       pgd.addClass("teragen", TeraGen.class, "Generate data for the terasort");
       pgd.addClass("terasort", TeraSort.class, "Run the terasort");
       pgd.addClass("teravalidate", TeraValidate.class, "Checking results of terasort");
-      exitCode = pgd.run(argv);
+      pgd.addClass("custommap", CustomMap.class, "A map-only job with stress workload per bytes");
+      pgd.addClass("nocomputation", NoComputation.class, "A map-only job with doing nothing");
+      pgd.addClass("invertedindex", InvertedIndex.class, "Inverted index");
+      pgd.addClass("termvector", TermVector.class, "Term vector");
+      pgd.addClass("histogrammovies", HistogramMovies.class, "Histogram movices");
+      pgd.addClass("histogramratings", HistogramRatings.class, "Histogram ratings");
+      pgd.addClass("selfjoin", SelfJoin.class, "Self join");
+      exitCode = pgd.driver(argv);
     }
     catch(Throwable e){
       e.printStackTrace();
