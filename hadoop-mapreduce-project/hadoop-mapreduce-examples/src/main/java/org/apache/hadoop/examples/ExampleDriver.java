@@ -78,7 +78,7 @@ public class ExampleDriver {
       pgd.addClass("histogrammovies", HistogramMovies.class, "Histogram movices");
       pgd.addClass("histogramratings", HistogramRatings.class, "Histogram ratings");
       pgd.addClass("selfjoin", SelfJoin.class, "Self join");
-      exitCode = pgd.driver(argv);
+      exitCode = pgd.run(argv);
     }
     catch(Throwable e){
       e.printStackTrace();
