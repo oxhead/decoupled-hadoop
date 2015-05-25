@@ -39,6 +39,7 @@ public class ResourceRequestPBImpl extends  ResourceRequest {
   private Priority priority = null;
   private Resource capability = null;
   
+  private String requestDetail = null;
   
   public ResourceRequestPBImpl() {
     builder = ResourceRequestProto.newBuilder();
@@ -161,6 +162,22 @@ public class ResourceRequestPBImpl extends  ResourceRequest {
   public void setRelaxLocality(boolean relaxLocality) {
     maybeInitBuilder();
     builder.setRelaxLocality(relaxLocality);
+  }
+
+  @Override
+  public String getRequestDetail() {
+    ResourceRequestProtoOrBuilder p = viaProto ? proto : builder;
+    return p.getRequestDetail();
+  }
+
+  @Override
+  public void setRequestDetail(String requestDetail) {
+    maybeInitBuilder();
+    if (requestDetail == null) {
+      builder.clearResourceName();
+      return;
+    }
+    builder.setRequestDetail((requestDetail));
   }
 
   private PriorityPBImpl convertFromProtoFormat(PriorityProto p) {

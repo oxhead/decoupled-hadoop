@@ -77,8 +77,6 @@ import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerApplicat
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerApplicationAttempt;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerApplicationAttempt.ContainersAndNMTokensAllocation;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerUtils;
-import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
-import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.AppAddedSchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.AppAttemptAddedSchedulerEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.event.AppAttemptRemovedSchedulerEvent;
@@ -101,7 +99,7 @@ import com.google.common.annotations.VisibleForTesting;
 @Evolving
 @SuppressWarnings("unchecked")
 public class FlowScheduler extends
-    AbstractYarnScheduler<FiCaSchedulerApp, FiCaSchedulerNode> implements
+    AbstractYarnScheduler<FlowSchedulerApp, FlowSchedulerNode> implements
     Configurable {
 
   private static final Log LOG = LogFactory.getLog(FlowScheduler.class);
@@ -210,7 +208,7 @@ public class FlowScheduler extends
     validateConf(conf);
     //Use ConcurrentSkipListMap because applications need to be ordered
     this.applications =
-        new ConcurrentSkipListMap<ApplicationId, SchedulerApplication<FiCaSchedulerApp>>();
+        new ConcurrentSkipListMap<ApplicationId, SchedulerApplication<FlowSchedulerApp>>();
     this.minimumAllocation =
         Resources.createResource(conf.getInt(
             YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB,
@@ -297,7 +295,7 @@ public class FlowScheduler extends
   public Allocation allocate(
       ApplicationAttemptId applicationAttemptId, List<ResourceRequest> ask,
       List<ContainerId> release, List<String> blacklistAdditions, List<String> blacklistRemovals) {
-    FiCaSchedulerApp application = getApplicationAttempt(applicationAttemptId);
+    FlowSchedulerApp application = getApplicationAttempt(applicationAttemptId);
     if (application == null) {
       LOG.error("Calling allocate on removed " +
           "or non existant application " + applicationAttemptId);
@@ -350,15 +348,15 @@ public class FlowScheduler extends
     }
   }
 
-  private FiCaSchedulerNode getNode(NodeId nodeId) {
+  private FlowSchedulerNode getNode(NodeId nodeId) {
     return nodes.get(nodeId);
   }
 
   @VisibleForTesting
   public synchronized void addApplication(ApplicationId applicationId,
       String queue, String user, boolean isAppRecovering) {
-    SchedulerApplication<FiCaSchedulerApp> application =
-        new SchedulerApplication<FiCaSchedulerApp>(DEFAULT_QUEUE, user);
+    SchedulerApplication<FlowSchedulerApp> application =
+        new SchedulerApplication<FlowSchedulerApp>(DEFAULT_QUEUE, user);
     applications.put(applicationId, application);
     metrics.submitApp(user);
     LOG.info("Accepted application " + applicationId + " from user: " + user
@@ -378,12 +376,12 @@ public class FlowScheduler extends
       addApplicationAttempt(ApplicationAttemptId appAttemptId,
           boolean transferStateFromPreviousAttempt,
           boolean isAttemptRecovering) {
-    SchedulerApplication<FiCaSchedulerApp> application =
+    SchedulerApplication<FlowSchedulerApp> application =
         applications.get(appAttemptId.getApplicationId());
     String user = application.getUser();
     // TODO: Fix store
-    FiCaSchedulerApp schedulerApp =
-        new FiCaSchedulerApp(appAttemptId, user, DEFAULT_QUEUE,
+    FlowSchedulerApp schedulerApp =
+        new FlowSchedulerApp(appAttemptId, user, DEFAULT_QUEUE,
           activeUsersManager, this.rmContext);
 
     if (transferStateFromPreviousAttempt) {
@@ -409,7 +407,7 @@ public class FlowScheduler extends
 
   private synchronized void doneApplication(ApplicationId applicationId,
       RMAppState finalState) {
-    SchedulerApplication<FiCaSchedulerApp> application =
+    SchedulerApplication<FlowSchedulerApp> application =
         applications.get(applicationId);
     if (application == null){
       LOG.warn("Couldn't find application " + applicationId);
@@ -427,8 +425,8 @@ public class FlowScheduler extends
       ApplicationAttemptId applicationAttemptId,
       RMAppAttemptState rmAppAttemptFinalState, boolean keepContainers)
       throws IOException {
-    FiCaSchedulerApp attempt = getApplicationAttempt(applicationAttemptId);
-    SchedulerApplication<FiCaSchedulerApp> application =
+    FlowSchedulerApp attempt = getApplicationAttempt(applicationAttemptId);
+    SchedulerApplication<FlowSchedulerApp> application =
         applications.get(applicationAttemptId.getApplicationId());
     if (application == null || attempt == null) {
       throw new IOException("Unknown application " + applicationAttemptId + 
@@ -459,15 +457,15 @@ public class FlowScheduler extends
    * 
    * @param node node on which resources are available to be allocated
    */
-  private void assignContainers(FiCaSchedulerNode node) {
+  private void assignContainers(FlowSchedulerNode node) {
     LOG.debug("assignContainers:" +
         " node=" + node.getRMNode().getNodeAddress() + 
         " #applications=" + applications.size());
 
     // Try to assign containers to applications in fifo order
-    for (Map.Entry<ApplicationId, SchedulerApplication<FiCaSchedulerApp>> e : applications
+    for (Map.Entry<ApplicationId, SchedulerApplication<FlowSchedulerApp>> e : applications
         .entrySet()) {
-      FiCaSchedulerApp application = e.getValue().getCurrentAppAttempt();
+      FlowSchedulerApp application = e.getValue().getCurrentAppAttempt();
       if (application == null) {
         continue;
       }
@@ -508,9 +506,9 @@ public class FlowScheduler extends
 
     // Update the applications' headroom to correctly take into
     // account the containers assigned in this update.
-    for (SchedulerApplication<FiCaSchedulerApp> application : applications.values()) {
-      FiCaSchedulerApp attempt =
-          (FiCaSchedulerApp) application.getCurrentAppAttempt();
+    for (SchedulerApplication<FlowSchedulerApp> application : applications.values()) {
+      FlowSchedulerApp attempt =
+          (FlowSchedulerApp) application.getCurrentAppAttempt();
       if (attempt == null) {
         continue;
       }
@@ -518,8 +516,8 @@ public class FlowScheduler extends
     }
   }
 
-  private int getMaxAllocatableContainers(FiCaSchedulerApp application,
-      Priority priority, FiCaSchedulerNode node, NodeType type) {
+  private int getMaxAllocatableContainers(FlowSchedulerApp application,
+      Priority priority, FlowSchedulerNode node, NodeType type) {
     int maxContainers = 0;
     
     ResourceRequest offSwitchRequest = 
@@ -554,8 +552,8 @@ public class FlowScheduler extends
   }
 
 
-  private int assignContainersOnNode(FiCaSchedulerNode node, 
-      FiCaSchedulerApp application, Priority priority 
+  private int assignContainersOnNode(FlowSchedulerNode node, 
+      FlowSchedulerApp application, Priority priority 
   ) {
     // Data-local
     int nodeLocalContainers = 
@@ -581,8 +579,8 @@ public class FlowScheduler extends
     return (nodeLocalContainers + rackLocalContainers + offSwitchContainers);
   }
 
-  private int assignNodeLocalContainers(FiCaSchedulerNode node, 
-      FiCaSchedulerApp application, Priority priority) {
+  private int assignNodeLocalContainers(FlowSchedulerNode node, 
+      FlowSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
       application.getResourceRequest(priority, node.getNodeName());
@@ -607,8 +605,8 @@ public class FlowScheduler extends
     return assignedContainers;
   }
 
-  private int assignRackLocalContainers(FiCaSchedulerNode node, 
-      FiCaSchedulerApp application, Priority priority) {
+  private int assignRackLocalContainers(FlowSchedulerNode node, 
+      FlowSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
       application.getResourceRequest(priority, node.getRMNode().getRackName());
@@ -632,8 +630,8 @@ public class FlowScheduler extends
     return assignedContainers;
   }
 
-  private int assignOffSwitchContainers(FiCaSchedulerNode node, 
-      FiCaSchedulerApp application, Priority priority) {
+  private int assignOffSwitchContainers(FlowSchedulerNode node, 
+      FlowSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
       application.getResourceRequest(priority, ResourceRequest.ANY);
@@ -645,7 +643,7 @@ public class FlowScheduler extends
     return assignedContainers;
   }
 
-  private int assignContainer(FiCaSchedulerNode node, FiCaSchedulerApp application, 
+  private int assignContainer(FlowSchedulerNode node, FlowSchedulerApp application, 
       Priority priority, int assignableContainers, 
       ResourceRequest request, NodeType type) {
     LOG.debug("assignContainers:" +
@@ -697,7 +695,7 @@ public class FlowScheduler extends
   }
 
   private synchronized void nodeUpdate(RMNode rmNode) {
-    FiCaSchedulerNode node = getNode(rmNode.getNodeID());
+    FlowSchedulerNode node = getNode(rmNode.getNodeID());
     
     List<UpdatedContainerInfo> containerInfoList = rmNode.pullContainerUpdates();
     List<ContainerStatus> newlyLaunchedContainers = new ArrayList<ContainerStatus>();
@@ -853,13 +851,13 @@ public class FlowScheduler extends
 
     // Get the application for the finished container
     Container container = rmContainer.getContainer();
-    FiCaSchedulerApp application =
+    FlowSchedulerApp application =
         getCurrentAttemptForContainer(container.getId());
     ApplicationId appId =
         container.getId().getApplicationAttemptId().getApplicationId();
     
     // Get the node on which the container was allocated
-    FiCaSchedulerNode node = getNode(container.getNodeId());
+    FlowSchedulerNode node = getNode(container.getNodeId());
     
     if (application == null) {
       LOG.info("Unknown application: " + appId + 
@@ -888,7 +886,7 @@ public class FlowScheduler extends
   private Resource usedResource = recordFactory.newRecordInstance(Resource.class);
 
   private synchronized void removeNode(RMNode nodeInfo) {
-    FiCaSchedulerNode node = getNode(nodeInfo.getNodeID());
+    FlowSchedulerNode node = getNode(nodeInfo.getNodeID());
     if (node == null) {
       return;
     }
@@ -926,7 +924,7 @@ public class FlowScheduler extends
   }
 
   private synchronized void addNode(RMNode nodeManager) {
-    FiCaSchedulerNode schedulerNode = new FiCaSchedulerNode(nodeManager,
+    FlowSchedulerNode schedulerNode = new FlowSchedulerNode(nodeManager,
         usePortForNodeName);
     this.nodes.put(nodeManager.getNodeID(), schedulerNode);
     Resources.addTo(clusterResource, nodeManager.getTotalCapability());
@@ -940,7 +938,7 @@ public class FlowScheduler extends
 
   @Override
   public RMContainer getRMContainer(ContainerId containerId) {
-    FiCaSchedulerApp attempt = getCurrentAttemptForContainer(containerId);
+    FlowSchedulerApp attempt = getCurrentAttemptForContainer(containerId);
     return (attempt == null) ? null : attempt.getRMContainer(containerId);
   }
 
@@ -961,7 +959,7 @@ public class FlowScheduler extends
     if (queueName.equals(DEFAULT_QUEUE.getQueueName())) {
       List<ApplicationAttemptId> attempts =
           new ArrayList<ApplicationAttemptId>(applications.size());
-      for (SchedulerApplication<FiCaSchedulerApp> app : applications.values()) {
+      for (SchedulerApplication<FlowSchedulerApp> app : applications.values()) {
         attempts.add(app.getCurrentAppAttempt().getApplicationAttemptId());
       }
       return attempts;
@@ -973,4 +971,9 @@ public class FlowScheduler extends
   public Resource getUsedResource() {
     return usedResource;
   }
+  
+  
+  //private boolean assignContainer(FlowSchedulerApp application, FlowSchedulerTask task, FlowSchedulerNode node) {
+  //	  
+  //}
 }

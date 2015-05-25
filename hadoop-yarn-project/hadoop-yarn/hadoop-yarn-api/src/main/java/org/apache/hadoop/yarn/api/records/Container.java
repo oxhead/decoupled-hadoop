@@ -163,4 +163,12 @@ public abstract class Container implements Comparable<Container> {
   @Private
   @Unstable
   public abstract void setContainerToken(Token containerToken);
+
+  @Public
+  @Stable
+  public abstract String getAllocationHint();
+
+  @Private
+  @Unstable
+  public abstract void setAllocationHint(String allocationHint);
 }

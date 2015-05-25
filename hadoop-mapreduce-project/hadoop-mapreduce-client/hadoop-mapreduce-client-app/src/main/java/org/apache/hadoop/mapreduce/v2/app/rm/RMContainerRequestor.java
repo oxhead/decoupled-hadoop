@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -196,6 +198,7 @@ public abstract class RMContainerRequestor extends RMCommunicator {
         AllocateRequest.newInstance(lastResponseID,
           super.getApplicationProgress(), new ArrayList<ResourceRequest>(ask),
           new ArrayList<ContainerId>(release), blacklistRequest);
+    modifyRequest(allocateRequest);
     AllocateResponse allocateResponse = scheduler.allocate(allocateRequest);
     lastResponseID = allocateResponse.getResponseId();
     availableResources = allocateResponse.getAvailableResources();
@@ -386,6 +389,8 @@ public abstract class RMContainerRequestor extends RMCommunicator {
   }
   
   protected void addContainerReq(ContainerRequest req) {
+	taskDataHostMap.put(req.attemptID, new LinkedList<String>());
+    taskPriorityMap.put(req.attemptID, req.priority);
     // Create resource requests
     for (String host : req.hosts) {
       // Data-local
@@ -552,5 +557,39 @@ public abstract class RMContainerRequestor extends RMCommunicator {
 
   public Set<String> getBlacklistedNodes() {
     return blacklistedNodes;
+  }
+
+  Map<TaskAttemptId, List<String>> taskDataHostMap = new HashMap<TaskAttemptId, List<String>>();
+  Map<TaskAttemptId, Priority> taskPriorityMap = new HashMap<TaskAttemptId, Priority>();
+
+  private void modifyRequest(AllocateRequest request) {
+    if (request.getAskList().size() == 0) {
+      return;
+    }
+	  List<TaskAttemptId> taskList = new ArrayList<TaskAttemptId>(taskDataHostMap.keySet());
+	  StringBuilder builder = new StringBuilder();
+	  for (int i = 0; i < taskList.size(); i++) {
+		  TaskAttemptId taskAttemptId = taskList.get(i);
+		  List<String> dataHosts = taskDataHostMap.get(taskAttemptId);
+		  builder.append(taskAttemptId.getTaskId().toString());
+		  builder.append(":");
+		  builder.append(taskAttemptId.toString());
+		  builder.append(":");
+		  builder.append(taskAttemptId.getTaskId().getTaskType().toString());
+		  builder.append(":");
+		  builder.append(taskPriorityMap.get(taskAttemptId).toString());
+		  builder.append(":");
+		  for (int j = 0; j < dataHosts.size(); j++) {
+				 builder.append(dataHosts.get(j));
+				 if (j!= dataHosts.size()-1) {
+					 builder.append(",");
+				 }
+		  }
+		  if (i != taskList.size()-1) {
+			  builder.append(";");
+		  }
+		  taskDataHostMap.remove(taskAttemptId);
+	  }
+	  request.getAskList().get(0).setRequestDetail(builder.toString());
   }
 }

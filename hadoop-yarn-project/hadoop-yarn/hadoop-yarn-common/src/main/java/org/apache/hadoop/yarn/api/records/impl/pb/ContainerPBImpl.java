@@ -248,6 +248,25 @@ public class ContainerPBImpl extends Container {
     this.containerToken = containerToken;
   }
 
+  @Override
+  public String getAllocationHint() {
+    ContainerProtoOrBuilder p = viaProto ? proto : builder;
+    if (!p.hasAllocationHint()) {
+      return null;
+    }
+    return (p.getAllocationHint());
+  }
+
+  @Override
+  public void setAllocationHint(String allocationHint) {
+    maybeInitBuilder();
+    if (allocationHint == null) {
+      builder.clearAllocationHint();
+      return;
+    }
+    builder.setAllocationHint(allocationHint);
+  }
+
   private ContainerIdPBImpl convertFromProtoFormat(ContainerIdProto p) {
     return new ContainerIdPBImpl(p);
   }

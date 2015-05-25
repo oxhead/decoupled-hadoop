@@ -1117,8 +1117,56 @@ public class RMContainerAllocator extends RMContainerRequestor
         
       return assigned;
     }
-        
+
+    @SuppressWarnings("unchecked")
+    private void assignMapsByHint(List<Container> allocatedContainers) {
+      // try to assign to all nodes first to match node local
+      Iterator<Container> it = allocatedContainers.iterator();
+      while(it.hasNext()){
+        Container allocated = it.next();
+        String taskAttemptIdString = allocated.getAllocationHint();
+        if (taskAttemptIdString == null || taskAttemptIdString.length() < 1) {
+          continue;
+        }
+        for (TaskAttemptId taskAttemptId : maps.keySet()) {
+          if (taskAttemptId.toString().equals(taskAttemptIdString)) {
+            ContainerRequest assigned = maps.remove(taskAttemptId);
+            containerAssigned(allocated, assigned);
+            it.remove();
+            JobCounterUpdateEvent jce =
+                new JobCounterUpdateEvent(assigned.attemptID.getTaskId().getJobId());
+            jce.addCounterUpdate(JobCounter.RACK_LOCAL_MAPS, 1);
+            eventHandler.handle(jce);
+            rackLocalAssigned++;
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("Assigned map based on allocation hint " + taskAttemptIdString);
+            }
+            break;
+          }
+        }
+        for (TaskAttemptId taskAttemptId : reduces.keySet()) {
+          if (taskAttemptId.toString().equals(taskAttemptIdString)) {
+            ContainerRequest assigned = reduces.remove(taskAttemptId);
+            containerAssigned(allocated, assigned);
+            it.remove();
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("Assigned reduce based on allocation hint " + taskAttemptIdString);
+            }
+            break;
+          }
+        }
+      }
+    }
+
     private void assignContainers(List<Container> allocatedContainers) {
+      LOG.fatal("~~~~~~~~~~~~~~~~~~~~");
+      for (Container c : allocatedContainers) {
+        LOG.fatal("[Hint] container=" + c.getId() + ", hint=" + c.getAllocationHint());
+      }
+      LOG.fatal("~~~~~~~~~~~~~~~~~~~~");
+      // assign before original assignment
+      assignMapsByHint(allocatedContainers);
+
       Iterator<Container> it = allocatedContainers.iterator();
       while (it.hasNext()) {
         Container allocated = it.next();

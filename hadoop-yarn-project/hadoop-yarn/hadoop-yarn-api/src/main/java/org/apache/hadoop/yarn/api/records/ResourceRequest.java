@@ -360,4 +360,12 @@ public abstract class ResourceRequest implements Comparable<ResourceRequest> {
       return priorityComparison;
     }
   }
+
+  @Public
+  @Stable
+  public abstract void setRequestDetail(String requestDetail);
+
+  @Public
+  @Stable
+  public abstract String getRequestDetail();
 }
