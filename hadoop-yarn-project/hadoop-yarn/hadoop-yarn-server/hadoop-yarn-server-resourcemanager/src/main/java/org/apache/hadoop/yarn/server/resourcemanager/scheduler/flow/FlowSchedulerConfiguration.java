@@ -82,37 +82,37 @@ public class FlowSchedulerConfiguration extends Configuration {
     String[] flowRateString;
 
     if (jobName.contains("TeraSort")) {
-      flowRateString = getStrings(FLOWRATE_TERASORT);
+      flowRateString = getStrings(FLOWRATE_TERASORT, "0.0", "0.0");
     } else if (jobName.contains("word count")) {
-      flowRateString = getStrings(FLOWRATE_WORDCOUNT);
+      flowRateString = getStrings(FLOWRATE_WORDCOUNT, "0.0", "0.0");
     } else if (jobName.contains("grep-search")) {
-      flowRateString = getStrings(FLOWRATE_GREP);
+      flowRateString = getStrings(FLOWRATE_GREP, "0.0", "0.0");
     } else if (jobName.contains("nocomputation")) {
-      flowRateString = getStrings(FLOWRATE_NOCOMPUTATION);
+      flowRateString = getStrings(FLOWRATE_NOCOMPUTATION, "0.0", "0.0");
     } else if (jobName.contains("CustomMap")) {
       if (jobName.contains("CustomMap_1")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1", "0.0", "0.0");
       } else if (jobName.contains("CustomMap_2")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".2");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".2", "0.0", "0.0");
       } else if (jobName.contains("CustomMap_3")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".3");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".3", "0.0", "0.0");
       } else if (jobName.contains("CustomMap_4")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".4");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".4", "0.0", "0.0");
       } else if (jobName.contains("CustomMap_5")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".5");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".5", "0.0", "0.0");
       } else if (jobName.contains("CustomMap_6")) {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".6");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".6", "0.0", "0.0");
       } else {
-        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1");
+        flowRateString = getStrings(FLOWRATE_CUSTOMMAP + ".1", "0.0", "0.0");
       }
     } else if (jobName.contains("histogram-movies")) {
-      flowRateString = getStrings(FLOWRATE_HISTOGRAMMOVIES);
+      flowRateString = getStrings(FLOWRATE_HISTOGRAMMOVIES, "0.0", "0.0");
     } else if (jobName.contains("histogram-ratings")) {
-      flowRateString = getStrings(FLOWRATE_HISTOGRAMRATINGS);
+      flowRateString = getStrings(FLOWRATE_HISTOGRAMRATINGS, "0.0", "0.0");
     } else if (jobName.contains("inverted-index")) {
-      flowRateString = getStrings(FLOWRATE_INVERTEDINDEX);
+      flowRateString = getStrings(FLOWRATE_INVERTEDINDEX, "0.0", "0.0");
     } else {
-      flowRateString = getStrings(FLOWRATE_DEFAULT);
+      flowRateString = getStrings(FLOWRATE_DEFAULT, "0.0", "0.0");
     }
 
     FlowRate flowRate;

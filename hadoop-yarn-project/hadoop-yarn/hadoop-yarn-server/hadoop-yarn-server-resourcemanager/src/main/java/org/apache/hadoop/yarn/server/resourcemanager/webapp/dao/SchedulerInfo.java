@@ -29,6 +29,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowScheduler;
 
 @XmlRootElement
 @XmlSeeAlso({ CapacitySchedulerInfo.class, FairSchedulerInfo.class,
@@ -51,6 +52,8 @@ public class SchedulerInfo {
       this.schedulerName = "Fair Scheduler";
     } else if (rs instanceof FifoScheduler) {
       this.schedulerName = "Fifo Scheduler";
+    } else if (rs instanceof FlowScheduler) {
+      this.schedulerName = "Flow Scheduler";
     }
     this.minAllocResource = new ResourceInfo(rs.getMinimumResourceCapability());
     this.maxAllocResource = new ResourceInfo(rs.getMaximumResourceCapability());

@@ -77,7 +77,7 @@ public class FlowSchedulerApp extends SchedulerApplicationAttempt {
 
   public FlowSchedulerApp(ApplicationAttemptId applicationAttemptId, 
       String user, Queue queue, ActiveUsersManager activeUsersManager,
-      RMContext rmContext) {
+      RMContext rmContext, FlowSchedulerManager flowSchedulerManager) {
     super(applicationAttemptId, user, queue, activeUsersManager, rmContext);
     
     RMApp rmApp = rmContext.getRMApps().get(getApplicationId());
@@ -93,6 +93,8 @@ public class FlowSchedulerApp extends SchedulerApplicationAttempt {
     }
     
     setAMResource(amResource);
+    
+    this.flowSchedulerManager = flowSchedulerManager;
   }
 
   synchronized public boolean containerCompleted(RMContainer rmContainer,

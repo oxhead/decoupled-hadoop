@@ -26,6 +26,7 @@ import org.apache.hadoop.yarn.server.resourcemanager.ResourceManager;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairScheduler;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.flow.FlowScheduler;
 import org.apache.hadoop.yarn.util.StringHelper;
 import org.apache.hadoop.yarn.webapp.Controller;
 import org.apache.hadoop.yarn.webapp.YarnWebParams;
@@ -86,6 +87,12 @@ public class RmController extends Controller {
     if (rs instanceof FairScheduler) {
       setTitle("Fair Scheduler");
       render(FairSchedulerPage.class);
+      return;
+    }
+    
+    if (rs instanceof FlowScheduler) {
+      setTitle("Flow Scheduler");
+      render(FlowSchedulerPage.class);
       return;
     }
     

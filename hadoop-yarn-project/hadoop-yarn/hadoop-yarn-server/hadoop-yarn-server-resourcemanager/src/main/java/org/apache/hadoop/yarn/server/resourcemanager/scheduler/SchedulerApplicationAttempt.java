@@ -398,7 +398,7 @@ public class SchedulerApplicationAttempt {
   }
   
   public synchronized void showRequests() {
-    if (LOG.isDebugEnabled()) {
+    //if (LOG.isDebugEnabled()) {
       for (Priority priority : getPriorities()) {
         Map<String, ResourceRequest> requests = getResourceRequests(priority);
         if (requests != null) {
@@ -411,7 +411,7 @@ public class SchedulerApplicationAttempt {
           }
         }
       }
-    }
+    //}
   }
   
   public Resource getCurrentConsumption() {

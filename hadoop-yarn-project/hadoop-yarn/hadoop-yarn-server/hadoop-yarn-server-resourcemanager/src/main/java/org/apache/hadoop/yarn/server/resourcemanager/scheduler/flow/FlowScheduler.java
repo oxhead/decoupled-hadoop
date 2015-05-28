@@ -226,6 +226,7 @@ public class FlowScheduler extends
     this.metrics = QueueMetrics.forQueue(DEFAULT_QUEUE_NAME, null, false,
         conf);
     this.activeUsersManager = new ActiveUsersManager(metrics);
+    this.flowSchedulerManager = new FlowSchedulerManager(rmContext, new FlowSchedulerConfiguration(conf));
   }
 
   @Override
@@ -295,6 +296,9 @@ public class FlowScheduler extends
   public Allocation allocate(
       ApplicationAttemptId applicationAttemptId, List<ResourceRequest> ask,
       List<ContainerId> release, List<String> blacklistAdditions, List<String> blacklistRemovals) {
+    for (ResourceRequest rr : ask) {
+      LOG.fatal("@@ request=" + rr);
+    }
     FlowSchedulerApp application = getApplicationAttempt(applicationAttemptId);
     if (application == null) {
       LOG.error("Calling allocate on removed " +
@@ -382,7 +386,7 @@ public class FlowScheduler extends
     // TODO: Fix store
     FlowSchedulerApp schedulerApp =
         new FlowSchedulerApp(appAttemptId, user, DEFAULT_QUEUE,
-          activeUsersManager, this.rmContext);
+          activeUsersManager, this.rmContext, this.flowSchedulerManager);
 
     if (transferStateFromPreviousAttempt) {
       schedulerApp.transferStateFromPreviousAttempt(application
@@ -458,7 +462,7 @@ public class FlowScheduler extends
    * @param node node on which resources are available to be allocated
    */
   private void assignContainers(FlowSchedulerNode node) {
-    LOG.debug("assignContainers:" +
+    LOG.fatal("assignContainers:" +
         " node=" + node.getRMNode().getNodeAddress() + 
         " #applications=" + applications.size());
 
@@ -972,6 +976,7 @@ public class FlowScheduler extends
     return usedResource;
   }
   
+  private FlowSchedulerManager flowSchedulerManager;
   
   //private boolean assignContainer(FlowSchedulerApp application, FlowSchedulerTask task, FlowSchedulerNode node) {
   //	  
